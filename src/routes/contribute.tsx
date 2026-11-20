@@ -330,7 +330,12 @@ function ContributePage() {
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                // Without this, Space both opens the picker and scrolls the
+                // page — role="button" only changes the ARIA semantics, it does
+                // not suppress the browser's default scroll-on-Space (GH #11).
+                e.preventDefault();
+                fileInputRef.current?.click();
               }}
             >
               <input
