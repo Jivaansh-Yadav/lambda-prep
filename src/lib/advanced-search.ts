@@ -6,6 +6,11 @@ import {
   type ResourceItem,
 } from '@/lib/resources-data';
 
+import { checkPatternSafety } from "./regex-guard";
+
+/** How long the regex scan may run before it is abandoned (GH #4). */
+const REGEX_SCAN_BUDGET_MS = 150;
+
 export type MatchMode = 'smart' | 'exact' | 'startsWith' | 'regex';
 export type SearchScope = 'all' | 'filename';
 export type SortOption = 'relevance' | 'name-asc' | 'name-desc' | 'newest' | 'largest' | 'smallest';
@@ -683,6 +688,13 @@ export function executeAdvancedSearch(
       try {
         // Allow "/pattern/flags" shorthand or raw regex pattern
         const slashMatch = /^\/(.+)\/([gimsuy]*)$/.exec(rawQuery);
+        const pattern = slashMatch?.[1] ?? rawQuery;
+        // Refuse patterns that can hang the main thread before compiling
+        // them — there is no way to interrupt a running RegExp (GH #4).
+        const safety = checkPatternSafety(pattern);
+        if (!safety.safe) {
+          return { results: [], error: safety.reason, highlightTerms: [] };
+        }
         if (slashMatch?.[1]) {
           const flags = slashMatch[2]?.includes('i') ? slashMatch[2] : `${slashMatch[2] ?? ''}i`;
           regex = new RegExp(slashMatch[1], flags.replace(/g/g, ''));
@@ -696,17 +708,33 @@ export function executeAdvancedSearch(
           highlightTerms: [],
         };
       }
-      pool = pool.filter(entry => {
+
+      // Belt and braces: even a pattern the static guard allows can be slow
+      // on 7,700 filenames. Stop the scan rather than freeze the tab.
+      const startedAt = performance.now();
+      const matched: typeof pool = [];
+      let overBudget = false;
+      for (const entry of pool) {
+        if (performance.now() - startedAt > REGEX_SCAN_BUDGET_MS) {
+          overBudget = true;
+          break;
+        }
         if (regex.test(entry.item.name)) {
           scores.set(entry, 100);
-          return true;
-        }
-        if (filters.searchScope === 'all' && regex.test(entry.fullLower)) {
+          matched.push(entry);
+        } else if (filters.searchScope === 'all' && regex.test(entry.fullLower)) {
           scores.set(entry, 60);
-          return true;
+          matched.push(entry);
         }
-        return false;
-      });
+      }
+      if (overBudget) {
+        return {
+          results: [],
+          error: 'That pattern is too slow to run on the whole library. Make it more specific.',
+          highlightTerms: [],
+        };
+      }
+      pool = matched;
     } else {
       // 'smart' mode: multi-term AND/OR, quotes, -exclude, wildcards, abbreviations + Fuse fuzzy fallback
       const parsed = parseSmartQuery(rawQuery);
@@ -849,6 +877,9 @@ export function getHighlightSegments(
     try {
       const slashMatch = /^\/(.+)\/([gimsuy]*)$/.exec(trimmed);
       const pattern = slashMatch?.[1] ?? trimmed;
+      // Same guard as the filter: this runs once per rendered card, so an
+      // unsafe pattern would be even more expensive here.
+      if (!checkPatternSafety(pattern).safe) return [{ text: filename, match: false }];
       const flags = slashMatch?.[2] ? `${slashMatch[2].replace(/g/g, '')}gi` : 'gi';
       const re = new RegExp(pattern, flags);
       const segments: HighlightSegment[] = [];

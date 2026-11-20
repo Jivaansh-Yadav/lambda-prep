@@ -152,6 +152,31 @@ describe('advanced-search engine', () => {
     });
     expect(badRegex.error).toBeTruthy();
     expect(badRegex.results).toEqual([]);
+
+    // Catastrophic patterns are refused before they are compiled, and the
+    // call returns immediately instead of locking the main thread (GH #4).
+    const startedAt = performance.now();
+    const unsafeRegex = executeAdvancedSearch(enriched, {
+      ...createDefaultFilters(),
+      query: '(a+)+$',
+      matchMode: 'regex',
+    });
+    expect(unsafeRegex.error).toMatch(/Nested repetition/i);
+    expect(unsafeRegex.results).toEqual([]);
+    expect(performance.now() - startedAt).toBeLessThan(200);
+
+    // Slash shorthand is guarded the same way.
+    const unsafeShorthand = executeAdvancedSearch(enriched, {
+      ...createDefaultFilters(),
+      query: '/(a*)*/i',
+      matchMode: 'regex',
+    });
+    expect(unsafeShorthand.error).toMatch(/Nested repetition/i);
+
+    // The highlight helper must not run the pattern either.
+    expect(getHighlightSegments('aaaaaaaaab.pdf', [], 'regex', '(a+)+$')).toEqual([
+      { text: 'aaaaaaaaab.pdf', match: false },
+    ]);
   });
 
   it('respects filename-only vs filename+folders scope', () => {
