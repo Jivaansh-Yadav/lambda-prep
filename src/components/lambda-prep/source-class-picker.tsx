@@ -381,11 +381,11 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
     setClassFilters(createDefaultFilters());
     setClassCorpusRequested(false);
     setClassHits(undefined);
-  }, [classSlug]);
+  }, [classSlug, setClassFilters]);
 
   useEffect(() => {
     setFileFilters(createDefaultFilters());
-  }, [classSlug, subject]);
+  }, [classSlug, subject, setFileFilters]);
 
   const sourcePath = source === 'cisce' ? '/resources/cisce' : '/resources/community';
   const currentClass = classSlug ? classes.find(c => c.slug === classSlug) : undefined;

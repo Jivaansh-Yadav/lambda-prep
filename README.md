@@ -125,9 +125,15 @@ cd lambda-prep
 bun install
 bun run dev      # vite dev on :3000
 bun run test     # vitest
+bun run lint     # eslint (correctness)
+bun run format   # prettier (layout, opt-in)
 ```
 
 Needs `DATABASE_URL` (Neon) for counters, ratings and admin, plus `ADMIN_PASSCODE` to open `/admin` at all. Without them the catalogue still renders — counters and admin actions report "not configured" instead of crashing.
+
+Cloudflare Web Analytics is wired up but off by default: set `VITE_CF_BEACON_TOKEN` to the site tag of a Web Analytics site to inject the beacon, and leave it unset for local work so dev page views never land in the real site's numbers. Development builds skip the beacon regardless.
+
+Lint and format are deliberately separate tools. ESLint is for correctness (hook dependencies, unused directives, server-only imports) and is what CI can gate on; Prettier owns layout and is run by hand, so a reflowed line can never fail the lint step.
 
 ## Deploy it
 
@@ -136,6 +142,8 @@ bun run build:pages    # cloudflare-pages preset → dist/ (_worker.js + static 
 ```
 
 Cloudflare Pages: build command `bun run build:pages`, output directory `dist`, compatibility flag `nodejs_compat`. The plain `bun run build` stays on the `cloudflare-module` Workers target for other hosts.
+
+Add `VITE_CF_BEACON_TOKEN` to the host's build environment (not just locally) if the deployment should report Web Analytics; Vite inlines `VITE_*` values at build time.
 
 ---
 

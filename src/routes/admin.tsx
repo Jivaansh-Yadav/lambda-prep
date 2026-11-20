@@ -1256,7 +1256,6 @@ function DatasetWorkflowPanel({ rootFolderUrl, onFinished }: DatasetWorkflowPane
 
   useEffect(() => {
     void loadOverview();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Self-scheduling poll: one status call, then 3s later the next, so a slow
@@ -1565,7 +1564,6 @@ function ManageResourcesCard() {
     getDriveWriteCapability({ data: {} })
       .then((res) => setHasOAuth(res.hasOAuth))
       .catch(() => setHasOAuth(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function openFolder(folder: DriveFileEntry) {
@@ -2326,7 +2324,6 @@ function ContributedResourcesCard() {
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function setStatus(row: AdminContributionRow, status: ContributionStatus) {
@@ -2526,7 +2523,6 @@ function ContactMessagesCard() {
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function setStatus(row: AdminContactMessageRow, status: ContactMessageStatus) {

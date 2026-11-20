@@ -248,6 +248,36 @@ const WEBSITE_JSON_LD = JSON.stringify({
   },
 });
 
+/**
+ * Cloudflare Web Analytics site tag for this deployment.
+ *
+ * Read from the build environment instead of being hardcoded: the beacon is
+ * production telemetry, and a copy committed to the source fired on every
+ * local dev session and every fork, mixing their page views into the real
+ * site's analytics. Set VITE_CF_BEACON_TOKEN in the deploy environment (and
+ * in .env locally to exercise it); when it is missing, or when Vite is
+ * serving a development build, nothing is injected and the page stays
+ * silent.
+ */
+const CF_BEACON_TOKEN = cloudflareBeaconToken();
+
+function cloudflareBeaconToken(): string | null {
+  // Nothing to measure against a dev server, and the tag belongs to the real
+  // deployment's data — so a development build never renders the beacon.
+  if (readBuildEnv("DEV") === true) return null;
+  const token = readBuildEnv("VITE_CF_BEACON_TOKEN");
+  return typeof token === "string" && token.length > 0 ? token : null;
+}
+
+function readBuildEnv(key: string): string | boolean | undefined {
+  // import.meta.env is replaced wholesale at build time, so this lookup is
+  // static in the bundle; the cast just keeps TypeScript happy either way.
+  const env = (import.meta as unknown as {
+    env?: Record<string, string | boolean | undefined>;
+  }).env;
+  return env?.[key];
+}
+
 function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -259,22 +289,24 @@ function RootShell({ children }: { children: ReactNode }) {
         />
         {/* Applies the stored/system theme class before first paint to prevent a light->dark flash. */}
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
-        {/* Cloudflare Web Analytics (RUM) beacon. Keep this hand-installed:
-            Cloudflare Pages only auto-injects a beacon for the Pages project's
-            own hostname, and this app is also served from hosts Cloudflare
-            does not instrument (Eazo production and preview aliases), which is
-            where real visitors are. The beacon POST is validated server-side
-            against the token — an unknown or deleted site tag fails the
-            request outright, so this token has to stay a live Web Analytics
-            site tag. The RUM rows are filtered by request hostname in
-            admin-server.ts, which is why one token covers every host. Both
-            static.cloudflareinsights.com (script) and cloudflareinsights.com
-            (beacon POST) are allowlisted in the CSP in src/server.ts. */}
-        <script
-          type="module"
-          src="https://static.cloudflareinsights.com/beacon.min.js"
-          data-cf-beacon='{"token": "a9d4d976f92b48ed89669f9959c889de"}'
-        ></script>
+        {CF_BEACON_TOKEN && (
+          /* Cloudflare Web Analytics (RUM) beacon. Keep this hand-installed:
+             Cloudflare Pages only auto-injects a beacon for the Pages
+             project's own hostname, and this app is also served from hosts
+             Cloudflare does not instrument (Eazo production and preview
+             aliases), which is where real visitors are. The beacon POST is
+             validated server-side against the token — an unknown or deleted
+             site tag fails the request outright — and the RUM rows are
+             filtered by request hostname in admin-server.ts, which is why one
+             token covers every host. Both static.cloudflareinsights.com
+             (script) and cloudflareinsights.com (beacon POST) are allowlisted
+             in the CSP in src/server.ts. */
+          <script
+            type="module"
+            src="https://static.cloudflareinsights.com/beacon.min.js"
+            data-cf-beacon={JSON.stringify({ token: CF_BEACON_TOKEN })}
+          ></script>
+        )}
       </head>
       <body>
         {children}

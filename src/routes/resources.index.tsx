@@ -169,7 +169,7 @@ function Resources() {
     hydratedFromUrl.current = true;
     setFilters(current => (current.query === urlQuery ? current : { ...current, query: urlQuery }));
     setCorpusRequested(true);
-  }, [urlQuery]);
+  }, [urlQuery, setFilters]);
 
   // Same-route quick search: navigating to /resources?q= when the library is
   // already mounted can resolve to identical router state (searching the same
@@ -184,7 +184,7 @@ function Resources() {
     }
     window.addEventListener('lambda-prep:quick-search', onQuickSearch);
     return () => window.removeEventListener('lambda-prep:quick-search', onQuickSearch);
-  }, []);
+  }, [setFilters]);
 
   // Restored filters arrive without any user interaction, so the corpus load
   // that AdvancedSearchBar normally triggers on typing has to happen here.

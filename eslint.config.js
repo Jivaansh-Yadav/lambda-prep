@@ -1,12 +1,19 @@
 import js from "@eslint/js";
-import eslintPluginPrettier from "eslint-plugin-prettier/recommended";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
+// Two separate jobs, on purpose:
+//   - `bun run lint`  (this file) — correctness: unused imports, bad hook
+//     dependencies, refresh-safety. Fast to read, safe to gate CI on.
+//   - `bun run format` (Prettier, .prettierrc) — layout only.
+// Formatting used to run inside ESLint through eslint-plugin-prettier, which
+// made a single quote style or a line 101 characters long a build-breaking
+// error in ~4k places across files nobody was editing. Formatting is opt-in
+// now and the two tools can't disagree again.
 export default tseslint.config(
-  { ignores: ["dist", ".output", ".vinxi"] },
+  { ignores: ["dist", ".output", ".vinxi", "node_modules", "public"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
@@ -36,5 +43,12 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
-  eslintPluginPrettier,
+  {
+    // Vendored shadcn primitives export their variant tables next to the
+    // component, and the provider modules export their hook beside the
+    // provider. Both cost only a Fast Refresh boundary while editing; the
+    // alternative is splitting working files purely for the dev server.
+    files: ["src/components/ui/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
 );

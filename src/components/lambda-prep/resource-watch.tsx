@@ -152,7 +152,6 @@ export function ResourceWatch({ groups, active, onSelect, shareUrl }: ResourceWa
     return () => { cancelled = true; };
     // Intentionally keyed on the id alone: re-firing when the surrounding
     // subject page re-renders would double-count the view.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active.id]);
 
   const handleShare = () => {
