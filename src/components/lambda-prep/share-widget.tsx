@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Check, Copy, Mail, MessageSquareText, Share2, X } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { DiscordIcon, RedditIcon, TelegramIcon, WhatsAppIcon } from '@/components/lambda-prep/brand-icons';
@@ -65,6 +65,44 @@ async function copyToClipboard(text: string): Promise<boolean> {
  * Reddit), plus a "More" button that hands off to the device's native share
  * sheet when available. Every target gets the same pre-generated template
  * text so the resource is identifiable wherever it lands. */
+/** One share destination. Either it is a URL we can link to directly
+ * (`href`), or it needs code to run (copying the message for Discord). */
+type ShareTarget = {
+  key: string;
+  label: string;
+  icon: ReactNode;
+  className: string;
+  href?: string;
+  /** Open in a new tab — true for http(s) targets, false for mailto:/sms:,
+   * which must be handled by the OS rather than by a blank tab. */
+  external?: boolean;
+  onClick?: () => void;
+};
+
+/** Renders a share destination as a link when it has somewhere to go, and as
+ * a button when it needs a handler. Links are preferred: `window.open` trips
+ * popup blockers for mailto:/sms:, and a real anchor also gives keyboard and
+ * middle-click users the behaviour they expect. */
+function ShareTile({ target, onShare, children }: { target: ShareTarget; onShare: (() => void) | undefined; children: ReactNode }) {
+  if (target.href) {
+    return (
+      <a
+        className={target.className}
+        href={target.href}
+        {...(target.external ? { target: '_blank', rel: 'noreferrer' } : {})}
+        onClick={() => onShare?.()}
+      >
+        {children}
+      </a>
+    );
+  }
+  return (
+    <button type="button" className={target.className} onClick={target.onClick}>
+      {children}
+    </button>
+  );
+}
+
 export function ShareWidget({ url, title, compact = false, onShare }: ShareWidgetProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -92,11 +130,6 @@ export function ShareWidget({ url, title, compact = false, onShare }: ShareWidge
     if (ok) onShare?.();
   };
 
-  const openShareLink = (href: string) => {
-    window.open(href, '_blank', 'noopener,noreferrer');
-    onShare?.();
-  };
-
   const handleDiscord = async () => {
     // Discord has no public web share-intent URL — the established pattern
     // is copying the link (with message) so the viewer pastes it into a
@@ -120,12 +153,13 @@ export function ShareWidget({ url, title, compact = false, onShare }: ShareWidge
   // WhatsApp and Discord are the two targets the Lambda Prep community
   // actually lives on, so they get their own full-width, brand-gradient
   // tiles (with the app name) above the regular grid of smaller targets.
-  const heroTargets = [
+  const heroTargets: ShareTarget[] = [
     {
       key: 'whatsapp',
       label: t('share.whatsapp'),
       icon: <WhatsAppIcon width={30} height={30} />,
-      onClick: () => openShareLink(`https://wa.me/?text=${encodeURIComponent(message)}`),
+      href: `https://wa.me/?text=${encodeURIComponent(message)}`,
+      external: true,
       className: 'share-hero-btn share-hero-whatsapp',
     },
     {
@@ -137,33 +171,38 @@ export function ShareWidget({ url, title, compact = false, onShare }: ShareWidge
     },
   ];
 
-  const targets = [
+  const targets: ShareTarget[] = [
     {
       key: 'telegram',
       label: t('share.telegram'),
       icon: <TelegramIcon width={26} height={26} />,
-      onClick: () => openShareLink(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`),
+      href: `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`,
+      external: true,
       className: 'share-target-btn share-target-telegram',
     },
     {
       key: 'reddit',
       label: t('share.reddit'),
       icon: <RedditIcon width={26} height={26} />,
-      onClick: () => openShareLink(`https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`),
+      href: `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`,
+      external: true,
       className: 'share-target-btn share-target-reddit',
     },
     {
       key: 'email',
       label: t('share.email'),
       icon: <Mail size={24} strokeWidth={2} />,
-      onClick: () => openShareLink(`mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(message)}`),
+      // mailto:/sms: hand off to the OS handler. These must be real links:
+      // window.open() on a non-http scheme is treated as a popup and silently
+      // dropped by most mobile browsers (GH #10).
+      href: `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(message)}`,
       className: 'share-target-btn share-target-email',
     },
     {
       key: 'message',
       label: t('share.message'),
       icon: <MessageSquareText size={24} strokeWidth={2} />,
-      onClick: () => openShareLink(`sms:?body=${encodeURIComponent(message)}`),
+      href: `sms:?body=${encodeURIComponent(message)}`,
       className: 'share-target-btn share-target-message',
     },
   ];
@@ -214,19 +253,19 @@ export function ShareWidget({ url, title, compact = false, onShare }: ShareWidge
 
             <div className="share-hero-row">
               {heroTargets.map(target => (
-                <button key={target.key} type="button" className={target.className} onClick={target.onClick}>
+                <ShareTile key={target.key} target={target} onShare={onShare}>
                   <span className="share-hero-icon">{target.icon}</span>
                   <span className="share-hero-label-target">{target.label}</span>
-                </button>
+                </ShareTile>
               ))}
             </div>
 
             <div className="share-targets-grid">
               {targets.map(target => (
-                <button key={target.key} type="button" className={target.className} onClick={target.onClick}>
+                <ShareTile key={target.key} target={target} onShare={onShare}>
                   <span className="share-target-icon">{target.icon}</span>
                   <span className="share-target-label">{target.label}</span>
-                </button>
+                </ShareTile>
               ))}
               {canNativeShare && (
                 <button type="button" className="share-target-btn share-target-more" onClick={handleNativeShare}>
