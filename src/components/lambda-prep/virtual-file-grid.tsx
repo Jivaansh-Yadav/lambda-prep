@@ -1,4 +1,4 @@
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef, useState } from 'react';
 
 /**
@@ -11,6 +11,12 @@ import { useEffect, useRef, useState } from 'react';
  * grid's `repeat(auto-fill, minmax(180px, 1fr))` sizing) via ResizeObserver,
  * so the virtualization math stays in sync with the actual layout at any
  * viewport size.
+ *
+ * Two scroll modes: by default the grid is its own capped scroll container
+ * (right for a browser panel embedded in a fixed-height page), and
+ * `windowScroll` virtualizes against the document instead, so a long result
+ * list scrolls like normal page content rather than trapping the wheel in a
+ * nested scroller.
  */
 export function VirtualFileGrid<T>({
   items,
@@ -24,6 +30,7 @@ export function VirtualFileGrid<T>({
   rowHeight = 172,
   gap = 12,
   maxHeight = 600,
+  windowScroll = false,
   className,
 }: {
   items: readonly T[];
@@ -32,10 +39,12 @@ export function VirtualFileGrid<T>({
   rowHeight?: number;
   gap?: number;
   maxHeight?: number;
+  windowScroll?: boolean;
   className?: string;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(1);
+  const [scrollMargin, setScrollMargin] = useState(0);
 
   useEffect(() => {
     const el = parentRef.current;
@@ -52,15 +61,41 @@ export function VirtualFileGrid<T>({
   }, [minColumnWidth, gap]);
 
   const rowCount = Math.ceil(items.length / columns);
-  const virtualizer = useVirtualizer({
-    count: rowCount,
+
+  // Window mode needs the list's offset from the top of the document so rows
+  // can be translated into page coordinates. Re-measure whenever the row or
+  // column count changes, since that is what moves the list below the search
+  // bar and filter panel.
+  useEffect(() => {
+    if (!windowScroll) return;
+    const el = parentRef.current;
+    if (!el) return;
+    setScrollMargin(el.getBoundingClientRect().top + window.scrollY);
+  }, [windowScroll, rowCount, columns]);
+
+  const elementVirtualizer = useVirtualizer({
+    count: windowScroll ? 0 : rowCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => rowHeight + gap,
     overscan: 4,
   });
 
+  const windowVirtualizer = useWindowVirtualizer({
+    count: windowScroll ? rowCount : 0,
+    estimateSize: () => rowHeight + gap,
+    overscan: 6,
+    scrollMargin,
+  });
+
+  const virtualizer = windowScroll ? windowVirtualizer : elementVirtualizer;
+  const offset = windowScroll ? scrollMargin : 0;
+
   return (
-    <div ref={parentRef} className={className} style={{ height: maxHeight, overflow: 'auto' }}>
+    <div
+      ref={parentRef}
+      className={className}
+      style={windowScroll ? undefined : { height: maxHeight, overflow: 'auto' }}
+    >
       <div style={{ position: 'relative', height: virtualizer.getTotalSize(), width: '100%' }}>
         {virtualizer.getVirtualItems().map(row => {
           const start = row.index * columns;
@@ -80,7 +115,7 @@ export function VirtualFileGrid<T>({
                 // stretch) and swallow the gap, leaving cards touching
                 // top-to-bottom with no visible border between rows.
                 height: rowHeight,
-                transform: `translateY(${row.start}px)`,
+                transform: `translateY(${row.start - offset}px)`,
                 display: 'grid',
                 gridTemplateColumns: `repeat(${columns}, 1fr)`,
                 gap,

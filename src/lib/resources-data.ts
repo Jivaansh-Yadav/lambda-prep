@@ -179,12 +179,20 @@ export async function loadResourceMisc(source: SourceId, classSlug: string): Pro
 }
 
 /** A single file match from a broad (cross-subject or cross-class) search,
- * carrying enough context (which class + subject it lives in) to render a
- * subtitle and to link straight back into that subject's file viewer. */
-export interface ResourceSearchHit { item: ResourceItem; classSlug: string; subject: string }
+ * carrying enough context (which class + subject + nested folder path + source
+ * it lives in) to render subtitles, filter by folder/year, and link straight
+ * back into that subject's file viewer. */
+export interface ResourceSearchHit {
+  item: ResourceItem;
+  classSlug: string;
+  subject: string;
+  source?: SourceId | undefined;
+  folderPath?: string[] | undefined;
+}
 
 const classFilesCache = new Map<string, ResourceSearchHit[]>();
 const sourceFilesCache = new Map<SourceId, ResourceSearchHit[]>();
+let libraryFilesCache: ResourceSearchHit[] | undefined;
 
 /** Every file in one class (across all its subjects, misc bucket and any
  * Editor's Choice folder nesting), confined to the given source. Used by the
@@ -202,14 +210,16 @@ export async function loadAllClassFiles(source: SourceId, classSlug: string): Pr
   for (const { subject } of manifest.subjects) {
     const entry = await loadResourceSubject(source, classSlug, subject);
     if (!entry) continue;
-    for (const item of entry.items) hits.push({ item, classSlug, subject });
+    for (const item of entry.items) hits.push({ item, classSlug, subject, source });
     for (const folder of entry.editorFolders ?? []) {
-      for (const item of flattenFolderFiles(folder)) hits.push({ item, classSlug, subject });
+      for (const { item, folderPath } of flattenFolderFilesWithPath(folder)) {
+        hits.push({ item, classSlug, subject, source, folderPath });
+      }
     }
   }
   if (manifest.miscCount > 0) {
     const misc = await loadResourceMisc(source, classSlug);
-    for (const item of misc) hits.push({ item, classSlug, subject: 'Miscellaneous' });
+    for (const item of misc) hits.push({ item, classSlug, subject: 'Miscellaneous', source });
   }
   classFilesCache.set(key, hits);
   return hits;
@@ -228,6 +238,17 @@ export async function loadAllSourceFiles(source: SourceId, classSlugs: readonly 
   const hits = perClass.flat();
   sourceFilesCache.set(source, hits);
   return hits;
+}
+
+/** Every file across both Community and Official CISCE sources for global library search. */
+export async function loadAllLibraryFiles(classSlugs: readonly string[]): Promise<ResourceSearchHit[]> {
+  if (libraryFilesCache) return libraryFilesCache;
+  const [communityHits, cisceHits] = await Promise.all([
+    loadAllSourceFiles('community', classSlugs),
+    loadAllSourceFiles('cisce', classSlugs),
+  ]);
+  libraryFilesCache = [...communityHits, ...cisceHits];
+  return libraryFilesCache;
 }
 
 export async function loadResourceDataset(source: SourceId, classSlug: string): Promise<ResourceDataset | undefined> {
@@ -257,6 +278,23 @@ export function flattenFolderFiles(folder: ResourceFolderNode): ResourceItem[] {
     }
   };
   folder.children.forEach(walk);
+  return out;
+}
+
+/** Flatten all file leaves inside a folder node while preserving each file's folder path. */
+export function flattenFolderFilesWithPath(
+  folder: ResourceFolderNode,
+  parentPath: readonly string[] = []
+): Array<{ item: ResourceItem; folderPath: string[] }> {
+  const out: Array<{ item: ResourceItem; folderPath: string[] }> = [];
+  const currentPath = [...parentPath, folder.name];
+  for (const child of folder.children) {
+    if (isFolderNode(child)) {
+      out.push(...flattenFolderFilesWithPath(child, currentPath));
+    } else {
+      out.push({ item: child, folderPath: currentPath });
+    }
+  }
   return out;
 }
 

@@ -3,9 +3,41 @@ import { ArrowLeft, ArrowUpRight, BookOpen, ChevronDown, ChevronUp, File, FileIm
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { classes, findSubjectMeta, getSiteOrigin, subjectMatchesStream } from '@/lib/lambda-prep';
 import { useI18n } from '@/lib/i18n';
-import { useFuseSearch } from '@/hooks/use-fuse-search';
 import { useGoBack } from '@/hooks/use-go-back';
-import { FILE_KIND_LABEL, flattenFolderFiles, findItemInSubject, getFileKind, getGroupBadge, getGroupLabel, groupItems, hasResourceDataset, isFolderNode, isPremiumGroup, loadAllClassFiles, loadAllSourceFiles, loadResourceManifest, loadResourceMisc, loadResourceSubject, type FileKind, type ResourceFolderNode, type ResourceItem, type ResourceManifest, type ResourceNode, type ResourceSearchHit, type ResourceSubject } from '@/lib/resources-data';
+import { useAdvancedFileSearch } from '@/hooks/use-advanced-file-search';
+import {
+  createDefaultFilters,
+  formatFileSize,
+  type AdvancedSearchFilters,
+  type EnrichedSearchableFile,
+  type MatchMode,
+  type RawSearchableFile,
+} from '@/lib/advanced-search';
+import {
+  FILE_KIND_LABEL,
+  flattenFolderFiles,
+  flattenFolderFilesWithPath,
+  findItemInSubject,
+  getFileKind,
+  getGroupBadge,
+  getGroupLabel,
+  groupItems,
+  hasResourceDataset,
+  isFolderNode,
+  isPremiumGroup,
+  loadAllClassFiles,
+  loadAllSourceFiles,
+  loadResourceManifest,
+  loadResourceMisc,
+  loadResourceSubject,
+  type FileKind,
+  type ResourceFolderNode,
+  type ResourceItem,
+  type ResourceManifest,
+  type ResourceSearchHit,
+  type ResourceSubject,
+} from '@/lib/resources-data';
+import { AdvancedSearchBar, HighlightedFilename } from '@/components/lambda-prep/advanced-search-bar';
 import { ResourceWatch } from '@/components/lambda-prep/resource-watch';
 import { BackLink } from '@/components/lambda-prep/back-link';
 import { VirtualFileGrid } from '@/components/lambda-prep/virtual-file-grid';
@@ -20,44 +52,16 @@ interface SourceClassPickerProps {
   source: SourceId;
   classSlug?: string | undefined;
   subject?: string | undefined;
-  /** Google Drive file id of the resource currently deep-linked via the
-   * `file` search param, if any — lets a shared link reopen the exact file
-   * instead of just the subject grid. */
   file?: string | undefined;
-  /** Current ISC stream filter ('Science' | 'Commerce' | 'Humanities'),
-   * undefined/`'All'` meaning no filter. Only shown once a class whose
-   * board is ISC is selected, mirroring the class hub's stream tabs. */
   stream?: string | undefined;
-  /** Called when the stream filter changes, so the host route can keep it
-   * in the `?stream=` search param (and therefore the shareable/back-nav
-   * URL) in sync. */
   onStreamChange?: (stream: string) => void;
-  /** Called whenever the viewer opens/closes a file, so the host route can
-   * keep the `file` search param (and therefore the shareable URL) in sync.
-   * Passing `undefined` clears the param. `replace` asks the host to swap
-   * the current history entry instead of pushing one — used when closing a
-   * file (so Back doesn't reopen it) and when switching files from inside
-   * the viewer (so Back still exits the viewer instead of stepping through
-   * every file the visitor happened to click). */
   onFileChange?: (fileId: string | undefined, opts?: { replace?: boolean }) => void;
   title: string;
   desc: React.ReactNode;
-  /** Optional provenance line appended to the community disclaimer, for a
-   * class whose index was compiled from a third-party community directory
-   * (the files themselves stay hosted by whoever shared them). */
   sourceCredit?: React.ReactNode;
 }
 
 const MISC_LABEL = 'Miscellaneous';
-
-// Referentially stable key arrays for useFuseSearch — defining them inline
-// at the call site would create a fresh array on every render and defeat
-// the hook's memoization.
-const SUBJECT_SEARCH_KEYS = ['subject'];
-const FILE_SEARCH_KEYS = ['name'];
-// Broad (cross-subject / cross-class) file search corpus key — ResourceSearchHit
-// wraps the file under `item`, so Fuse needs the nested dot-path.
-const SOURCE_HIT_SEARCH_KEYS = ['item.name'];
 
 const FILE_KIND_META: Record<FileKind, { icon: typeof FileText; tone: string; label: string }> = {
   pdf: { icon: FileText, tone: 'rose', label: FILE_KIND_LABEL.pdf },
@@ -82,33 +86,101 @@ function FileCard({ item, onClick }: { item: ResourceItem; onClick: () => void }
   );
 }
 
-/** Same card as FileCard but for a broad (cross-subject/cross-class) search
- * hit — shows which subject (and, for a cross-class search, which class)
- * the file lives in, since that context is no longer implied by the page
- * the user is on. Navigates straight into that subject's file viewer with
- * the file pre-opened via the `file` search param. */
-function HitFileCard({ hit, sourcePath, classLabel, stream }: { hit: ResourceSearchHit; sourcePath: string; classLabel?: string | undefined; stream?: string | undefined }) {
-  const kind = getFileKind(hit.item.name);
-  const meta = FILE_KIND_META[kind];
+/** Enriched file card used when subject-level advanced search/filtering is active.
+ * Highlights filename matches and surfaces folder trail, detected year, and file size. */
+function SearchFileCard({
+  entry,
+  highlightTerms,
+  matchMode,
+  rawQuery,
+  onClick,
+}: {
+  entry: EnrichedSearchableFile;
+  highlightTerms: readonly string[];
+  matchMode: MatchMode;
+  rawQuery: string;
+  onClick: () => void;
+}) {
+  const meta = FILE_KIND_META[entry.fileKind];
   const Icon = meta.icon;
+  const sizeLabel = formatFileSize(entry.sizeBytes);
+  const metaParts = [meta.label, entry.primaryYear, sizeLabel].filter(Boolean) as string[];
+  const contextTrail = entry.folderTrail || (entry.displayGroup !== "Editor's Choice" ? entry.displayGroup : "Editor's Choice");
+
+  return (
+    <button type="button" className={`resource-file-card tone-${meta.tone}`} onClick={onClick}>
+      <FileRatingBadge fileId={entry.item.id} />
+      <span className="resource-file-icon"><Icon size={26} strokeWidth={1.6} /></span>
+      <span className="resource-file-name">
+        <HighlightedFilename
+          name={entry.item.name}
+          highlightTerms={highlightTerms}
+          matchMode={matchMode}
+          rawQuery={rawQuery}
+        />
+      </span>
+      <span className="resource-file-search-meta">
+        <span className="resource-file-type">{metaParts.join(' · ')}</span>
+        {contextTrail && <span className="resource-file-context-line" title={contextTrail}>{contextTrail}</span>}
+      </span>
+    </button>
+  );
+}
+
+/** Broad (cross-subject / cross-class) search hit card with highlighted filename,
+ * class/subject/folder context, year, and file size. */
+function HitFileCard({
+  entry,
+  sourcePath,
+  classLabel,
+  stream,
+  highlightTerms,
+  matchMode,
+  rawQuery,
+}: {
+  entry: EnrichedSearchableFile;
+  sourcePath: string;
+  classLabel?: string | undefined;
+  stream?: string | undefined;
+  highlightTerms: readonly string[];
+  matchMode: MatchMode;
+  rawQuery: string;
+}) {
+  const meta = FILE_KIND_META[entry.fileKind];
+  const Icon = meta.icon;
+  const sizeLabel = formatFileSize(entry.sizeBytes);
+  const metaParts = [meta.label, entry.primaryYear, sizeLabel].filter(Boolean) as string[];
+  const subjectLabel = entry.subject ?? MISC_LABEL;
+  const locationParts = [classLabel, subjectLabel, entry.folderTrail || undefined].filter(Boolean) as string[];
+
   return (
     <Link
       to={sourcePath}
-      search={{ class: hit.classSlug, subject: hit.subject, file: hit.item.id, stream }}
+      search={{ class: entry.classSlug, subject: subjectLabel, file: entry.item.id, stream }}
       className={`resource-file-card tone-${meta.tone}`}
     >
-      <FileRatingBadge fileId={hit.item.id} />
+      <FileRatingBadge fileId={entry.item.id} />
       <span className="resource-file-icon"><Icon size={26} strokeWidth={1.6} /></span>
-      <span className="resource-file-name">{hit.item.name}</span>
-      <span className="resource-file-hit-meta">
-        <span className="resource-file-type">{meta.label}</span>
-        <span className="resource-file-hit-subject">{classLabel ? `${classLabel} · ${hit.subject}` : hit.subject}</span>
+      <span className="resource-file-name">
+        <HighlightedFilename
+          name={entry.item.name}
+          highlightTerms={highlightTerms}
+          matchMode={matchMode}
+          rawQuery={rawQuery}
+        />
+      </span>
+      <span className="resource-file-search-meta">
+        <span className="resource-file-type">{metaParts.join(' · ')}</span>
+        <span className="resource-file-context-line" title={locationParts.join(' · ')}>
+          {locationParts.join(' · ')}
+        </span>
       </span>
     </Link>
   );
 }
 
-function countFolderFiles(folder: ResourceFolderNode): number {  let n = 0;
+function countFolderFiles(folder: ResourceFolderNode): number {
+  let n = 0;
   for (const c of folder.children) {
     n += isFolderNode(c) ? countFolderFiles(c) : 1;
   }
@@ -125,9 +197,6 @@ function FolderCard({ folder, onClick }: { folder: ResourceFolderNode; onClick: 
   );
 }
 
-/** Recursive folder navigator used inside the Editor's Choice group: shows
- * folder cards (priority) + files at the current level, with a back button
- * and slide animation when drilling in/out of folders. */
 function EditorChoiceNav({ folders, items, onPick }: {
   folders: ResourceFolderNode[];
   items: ResourceItem[];
@@ -190,10 +259,6 @@ function GroupSection({ group, items, editorFolders, onPick }: {
   const [expanded, setExpanded] = useState(isGeneral || hasEditorFolders);
   const [overflows, setOverflows] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
-  // A folder-nav group (CISCE's official APF/CFQs/PYQs/SQP/Syllabus tree, or
-  // Community's curated Julius Caesar-style folders under "General") has no
-  // loose `items` of its own — the file count that matters is every file
-  // nested inside the folder tree instead.
   const displayCount = hasEditorFolders ? editorFolders!.reduce((n, f) => n + flattenFolderFiles(f).length, 0) : items.length;
 
   useEffect(() => {
@@ -212,17 +277,6 @@ function GroupSection({ group, items, editorFolders, onPick }: {
   }, [isGeneral, hasEditorFolders, items.length]);
 
   const showCollapseUi = !isGeneral && !hasEditorFolders && overflows;
-  // Every group gets virtualized once the creator actually expands it, so
-  // the collapsed state still goes through the same capped grid as every
-  // other group — with its gap and "View all" button — instead of jumping
-  // straight into an unbounded scroller with no spacing or expand/collapse
-  // affordance. Gating on `expanded` also keeps `gridRef` mounted while
-  // collapsed, which is what measures `overflows` via ResizeObserver in
-  // the first place.
-  // Editor's Choice (`isGeneral`/`hasEditorFolders`) is the one exception:
-  // it's meant to show every curated item in full, unbounded, with no
-  // scroll container of its own — so it's excluded here regardless of how
-  // many items it holds.
   const shouldVirtualize = !isGeneral && !hasEditorFolders && expanded;
 
   return (
@@ -279,53 +333,47 @@ function GroupSection({ group, items, editorFolders, onPick }: {
 export function SourceClassPicker({ source, classSlug, subject, file, stream, onStreamChange, onFileChange, title, desc, sourceCredit }: SourceClassPickerProps) {
   const { t } = useI18n();
   const { canGoBack, goBack } = useGoBack();
-  const [query, setQuery] = useState('');
-  const [subjectQuery, setSubjectQuery] = useState('');
-  const [fileQuery, setFileQuery] = useState('');
-  // Broad, cross-scope file search state. At the top level (no class picked
-  // yet) a query searches every file indexed for this source (CISCE or
-  // Community, across every class); once a class is picked but no subject
-  // yet, it's confined to that one class's files only. Both corpora are
-  // fetched lazily (only once the viewer actually types something) and
-  // cached by resources-data.ts, so landing on the page never pays for them.
+
+  // Advanced search & filter states for each navigation level
+  const [sourceFilters, setSourceFilters] = useState<AdvancedSearchFilters>(createDefaultFilters);
+  const [classFilters, setClassFilters] = useState<AdvancedSearchFilters>(createDefaultFilters);
+  const [fileFilters, setFileFilters] = useState<AdvancedSearchFilters>(createDefaultFilters);
+
+  // Lazy corpus triggers so opening the Filters drawer immediately loads facets even before typing
+  const [sourceCorpusRequested, setSourceCorpusRequested] = useState(false);
+  const [classCorpusRequested, setClassCorpusRequested] = useState(false);
+
   const [sourceHits, setSourceHits] = useState<ResourceSearchHit[] | undefined>(undefined);
   const [sourceHitsLoading, setSourceHitsLoading] = useState(false);
   const [classHits, setClassHits] = useState<ResourceSearchHit[] | undefined>(undefined);
   const [classHitsLoading, setClassHitsLoading] = useState(false);
-  // Manifest = subject names + counts only (cheap, loads up front for the
-  // card grid). The selected subject's actual file list (or misc) is a
-  // separate, much smaller fetch — so picking "Mathematics" out of a
-  // 6,000-file dataset only ever downloads Mathematics's own JSON shard.
+
   const [manifest, setManifest] = useState<ResourceManifest | undefined>(undefined);
   const [manifestLoading, setManifestLoading] = useState(false);
-  // A rejected loader (most often a stale content-hashed chunk after a
-  // redeploy) used to leave the skeleton spinning forever, because
-  // `*Loading` was only cleared in `.then()`. These flags let us render a
-  // real error state with a way out instead.
   const [manifestError, setManifestError] = useState(false);
   const [subjectError, setSubjectError] = useState(false);
   const [subjectEntry, setSubjectEntry] = useState<ResourceSubject | undefined>(undefined);
   const [miscItems, setMiscItems] = useState<ResourceItem[] | undefined>(undefined);
   const [subjectLoading, setSubjectLoading] = useState(false);
-  // Which `subject` the loaded shard actually belongs to. Readiness must be
-  // tracked per subject, not just "some entry exists": the previous subject's
-  // files stay in state for one render after a navigation, and treating them
-  // as ready would make a freshly linked `?file=` look unresolvable (and get
-  // cleared) before its own shard had a chance to arrive.
+
   const subjectKey = subject ? `${source}|${classSlug ?? ''}|${subject}` : '';
   const [loadedSubjectKey, setLoadedSubjectKey] = useState('');
+
   useEffect(() => {
-    setSubjectQuery('');
+    setClassFilters(createDefaultFilters());
+    setClassCorpusRequested(false);
+    setClassHits(undefined);
   }, [classSlug]);
+
   useEffect(() => {
-    setFileQuery('');
+    setFileFilters(createDefaultFilters());
   }, [classSlug, subject]);
+
   const sourcePath = source === 'cisce' ? '/resources/cisce' : '/resources/community';
   const currentClass = classSlug ? classes.find(c => c.slug === classSlug) : undefined;
   const hasDataset = classSlug ? hasResourceDataset(source, classSlug) : false;
 
-  // Manifest fetch: happens once per class, independent of which subject
-  // (if any) is selected, so the subject-card grid can render immediately.
+  // Manifest fetch
   useEffect(() => {
     if (!classSlug || !hasDataset) { setManifest(undefined); return; }
     let cancelled = false;
@@ -342,15 +390,12 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
     return () => { cancelled = true; };
   }, [source, classSlug, hasDataset]);
 
-  // Subject fetch: only the active subject's (or misc's) own JSON shard —
-  // split datasets never touch any other subject's files.
+  // Subject shard fetch
   useEffect(() => {
     if (!classSlug || !subject) { setSubjectEntry(undefined); setMiscItems(undefined); setLoadedSubjectKey(''); return; }
     let cancelled = false;
     setSubjectLoading(true);
     setSubjectError(false);
-    // Drop the outgoing subject's files up front so nothing downstream can
-    // read a stale shard as if it belonged to the subject now selected.
     setSubjectEntry(undefined);
     setMiscItems(undefined);
     setLoadedSubjectKey('');
@@ -373,14 +418,9 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
     // eslint-disable-next-line react-hooks/exhaustive-deps -- subjectKey is derived from exactly these three
   }, [source, classSlug, subject]);
 
-  // Broad cross-class search (top-level "choose a class" page): fetched
-  // lazily — only once the viewer actually types a query — since it means
-  // loading every subject's file list across every indexed class for this
-  // source. Cached in resources-data.ts, so retyping a cleared query or
-  // revisiting this page doesn't refetch.
-  const trimmedQuery = query.trim();
+  // Lazy load source-wide corpus when searching or opening filters at top level
   useEffect(() => {
-    if (classSlug || !trimmedQuery) return;
+    if (classSlug || !sourceCorpusRequested) return;
     let cancelled = false;
     setSourceHitsLoading(true);
     loadAllSourceFiles(source, classes.map(c => c.slug)).then(hits => {
@@ -392,13 +432,11 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- classSlug is a presence check only
-  }, [source, !!classSlug, !!trimmedQuery]);
+  }, [source, !!classSlug, sourceCorpusRequested]);
 
-  // Broad cross-subject search (class's own subject grid): same lazy-load,
-  // cheaper since it's confined to one class's files.
-  const trimmedSubjectQuery = subjectQuery.trim();
+  // Lazy load class-wide corpus when searching or opening filters at class level
   useEffect(() => {
-    if (!classSlug || subject || !hasDataset || !trimmedSubjectQuery) return;
+    if (!classSlug || subject || !hasDataset || !classCorpusRequested) return;
     let cancelled = false;
     setClassHitsLoading(true);
     loadAllClassFiles(source, classSlug).then(hits => {
@@ -410,21 +448,8 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- subject/hasDataset are presence checks only
-  }, [source, classSlug, !!subject, hasDataset, !!trimmedSubjectQuery]);
-  // Reset the cached hit lists when the class changes, so switching class
-  // doesn't show the previous class's broad search results while the new
-  // ones are still loading.
-  useEffect(() => {
-    setClassHits(undefined);
-  }, [classSlug]);
+  }, [source, classSlug, !!subject, hasDataset, classCorpusRequested]);
 
-  // Subject-grid search corpus: one card per subject plus a synthetic
-  // "Miscellaneous" card when there are ungrouped files, so the fuzzy
-  // search can match it by its displayed name too. Built from the
-  // manifest's counts, not full file lists. For ISC classes, also honors
-  // the Science/Commerce/Humanities stream filter — mirroring the class
-  // hub's stream tabs — but "Featured"/"Miscellaneous" are mixed-subject
-  // buckets with no single stream, so they stay visible regardless.
   const activeStream = currentClass?.board === 'ISC' ? (stream ?? 'All') : 'All';
   const subjectCards = useMemo((): Array<{ subject: string; count: number }> => {
     if (!manifest) return [];
@@ -432,16 +457,7 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
       .filter(s => s.subject === MISC_LABEL || s.subject === 'Featured' || subjectMatchesStream(s.subject, activeStream))
       .map(s => ({ subject: s.subject, count: s.count }));
     if (manifest.miscCount > 0) cards.push({ subject: MISC_LABEL, count: manifest.miscCount });
-    // Keep card order deterministic and independent of the underlying
-    // dataset's own subject order, which can silently shift between Google
-    // Drive re-crawls (folder listing order from the Drive API isn't
-    // guaranteed stable run-to-run). Without this, a routine "Update
-    // resource datasets" re-crawl could reshuffle the whole grid for
-    // anyone browsing once the regenerated dataset ships — "Featured"
-    // always leads, "Miscellaneous" always trails, everything else sorts
-    // alphabetically in between, so the grid's layout stays stable no
-    // matter what order the crawl happened to return folders in.
-    const priority = (subject: string) => (subject === 'Featured' ? 0 : subject === MISC_LABEL ? 2 : 1);
+    const priority = (subj: string) => (subj === 'Featured' ? 0 : subj === MISC_LABEL ? 2 : 1);
     return [...cards].sort((a, b) => {
       const pa = priority(a.subject);
       const pb = priority(b.subject);
@@ -449,71 +465,76 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
       return pa === 1 ? a.subject.localeCompare(b.subject) : 0;
     });
   }, [manifest, activeStream]);
-  const filteredSubjectCards = useFuseSearch(subjectCards, SUBJECT_SEARCH_KEYS, subjectQuery);
 
-  // Broad search results: the cross-class ("choose a class" page) and
-  // cross-subject (subject-grid page) hit lists, fuzzy-filtered the same
-  // way as every other search box here but against a corpus that only
-  // exists once the viewer has actually typed something (see the lazy
-  // loader effects above).
-  const filteredSourceHits = useFuseSearch(sourceHits ?? [], SOURCE_HIT_SEARCH_KEYS, trimmedQuery ? query : '', 130);
-  const isSourceSearchActive = trimmedQuery.length > 0;
-  const filteredClassHits = useFuseSearch(classHits ?? [], SOURCE_HIT_SEARCH_KEYS, trimmedSubjectQuery ? subjectQuery : '', 130);
-  const isClassSearchActive = trimmedSubjectQuery.length > 0;
+  // Build enriched search corpora for all three levels
+  const rawSourceFiles = useMemo<RawSearchableFile[]>(
+    () => (sourceHits ?? []).map(h => ({
+      item: h.item,
+      classSlug: h.classSlug,
+      subject: h.subject,
+      source: h.source ?? source,
+      folderPath: h.folderPath,
+    })),
+    [sourceHits, source]
+  );
+  const sourceSearch = useAdvancedFileSearch(rawSourceFiles, sourceFilters, 110);
 
-  // Per-subject file search corpus: the subject's flat items plus every file
-  // nested inside its Editor's Choice folders — a search must reach
-  // folder-nested files too, not just the loose top-level ones.
-  const subjectItems = subject === MISC_LABEL ? miscItems ?? [] : subjectEntry?.items ?? [];
+  const rawClassFiles = useMemo<RawSearchableFile[]>(() => {
+    const hits = classHits ?? [];
+    const scoped = activeStream === 'All'
+      ? hits
+      : hits.filter(h => h.subject === MISC_LABEL || h.subject === 'Featured' || subjectMatchesStream(h.subject, activeStream));
+    return scoped.map(h => ({
+      item: h.item,
+      classSlug: h.classSlug,
+      subject: h.subject,
+      source: h.source ?? source,
+      folderPath: h.folderPath,
+    }));
+  }, [classHits, activeStream, source]);
+  const classSearch = useAdvancedFileSearch(rawClassFiles, classFilters, 90);
+
+  const subjectItems = useMemo(
+    () => (subject === MISC_LABEL ? miscItems ?? [] : subjectEntry?.items ?? []),
+    [subject, miscItems, subjectEntry]
+  );
   const editorFolders = subjectEntry?.editorFolders;
-  const allSubjectFiles = useMemo(() => {
-    const folderFiles = editorFolders?.flatMap(flattenFolderFiles) ?? [];
-    return [...subjectItems, ...folderFiles];
-  }, [subjectItems, editorFolders]);
-  const filteredFiles = useFuseSearch(allSubjectFiles, FILE_SEARCH_KEYS, fileQuery, 50);
-  const isFileSearchActive = fileQuery.trim().length > 0;
+  const rawSubjectFiles = useMemo<RawSearchableFile[]>(() => {
+    const loose: RawSearchableFile[] = subjectItems.map(item => ({
+      item,
+      classSlug,
+      subject,
+      source,
+    }));
+    const nested: RawSearchableFile[] = (editorFolders ?? []).flatMap(folder =>
+      flattenFolderFilesWithPath(folder).map(({ item, folderPath }) => ({
+        item,
+        classSlug,
+        subject,
+        source,
+        folderPath,
+      }))
+    );
+    return [...loose, ...nested];
+  }, [subjectItems, editorFolders, classSlug, subject, source]);
+  const fileSearch = useAdvancedFileSearch(rawSubjectFiles, fileFilters, 50);
+
   const groups = groupItems(subjectItems);
-  // CISCE's official-resources folder tree (APF/CFQs/PYQs/SQP/Syllabus ->
-  // year -> files) and Community's curated Editor's Choice folders
-  // (Julius Caesar, Treasure Chest, ...) both live in `editorFolders`, but
-  // attach to different named groups. CISCE subjects have no loose items
-  // at all — only the folder tree — so there's no existing group entry to
-  // merge into; create a synthetic empty-items one for it.
   const editorFoldersGroup = subjectEntry?.editorFoldersGroup ?? 'General';
   const displayGroups = useMemo(() => {
     if (!editorFolders?.length) return groups;
     const hasMatch = groups.some(g => g.group.toLowerCase() === editorFoldersGroup.toLowerCase());
-    // A folder-nav group whose files all live inside the tree has no loose
-    // items, so it can't be ordered by getGroupPriority. Lead with it: it is
-    // the primary content of the subject ("Chapter Notes" / "CISCE Resources").
     return hasMatch ? groups : [{ group: editorFoldersGroup, items: [] }, ...groups];
   }, [groups, editorFolders, editorFoldersGroup]);
   const subjectDataReady = !!subject && loadedSubjectKey === subjectKey;
 
-  // The open file is derived from the `?file=` search param instead of being
-  // mirrored in local state. Keeping a separate `activeFile` state meant the
-  // two could disagree: pressing Back only pops the param, so the viewer
-  // stayed on screen while the URL said the file was closed (the page looked
-  // like Back "did nothing"), and the following Back then skipped straight
-  // past the subject the visitor expected to land on. Deriving it makes the
-  // URL the single source of truth, so browser Back/Forward — and any shared
-  // `?file=` deep link — open and close the viewer exactly as the address
-  // bar describes, in both directions.
   const openEntry = useMemo(() => {
     if (!file || !subjectDataReady) return null;
     return findItemInSubject(subjectItems, editorFolders, file);
   }, [file, subjectDataReady, subjectItems, editorFolders]);
   const activeFile = openEntry?.item ?? null;
-  // When viewing a file opened from inside a folder-card (e.g. "Act III,
-  // Scene I - Brief.pdf" inside the "Julius Caesar" > "ACT III" > "SCENE I"
-  // folder), the sidebar must show only that folder's own files — not the
-  // whole Editor's Choice group / subject. Resolving it through the same
-  // lookup as the file keeps that scope correct after a Back/Forward too.
   const activeFolderScope = openEntry?.folderScope ?? null;
 
-  // A `?file=` that resolves to nothing in this subject (stale share link,
-  // hand-edited address) would otherwise linger in the URL while the grid is
-  // on screen — drop it so the address matches what's actually rendered.
   useEffect(() => {
     if (!file || !subjectDataReady || openEntry) return;
     onFileChange?.(undefined, { replace: true });
@@ -523,12 +544,6 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
   const openFile = (item: ResourceItem, opts?: { replace?: boolean }) => {
     onFileChange?.(item.id, opts);
   };
-  // Opening a file pushes a history entry (see `onFileChange` in the host
-  // route), so closing it should undo that via the browser's own Back —
-  // falling back to clearing the param in place only when there's no history
-  // entry to go back to (e.g. the file was opened from a shared `?file=`
-  // link with nothing of ours before it), so that Back afterwards doesn't
-  // reopen the file.
   const closeFile = () => {
     if (canGoBack) { goBack(); return; }
     onFileChange?.(undefined, { replace: true });
@@ -554,8 +569,7 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
     </main>;
   }
 
-  // Dataset fetch failed (e.g. a stale chunk after a redeploy) -> say so and
-  // offer a way out instead of leaving the skeletons spinning forever.
+  // Dataset fetch failed
   if (currentClass && hasDataset && manifestError) {
     return <main className="container content-page">
       <BackLink to={sourcePath} search={{}} label={t('resources.backToClasses')} />
@@ -570,7 +584,7 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
     </main>;
   }
 
-  // Dataset is being fetched (code-split per class) -> lightweight loading state.
+  // Dataset manifest loading
   if (currentClass && hasDataset && !manifest) {
     return <main className="container content-page">
       <BackLink to={sourcePath} search={{}} label={t('resources.backToClasses')} />
@@ -582,66 +596,93 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
     </main>;
   }
 
-  // Class + manifest present, but no subject picked yet -> subject card grid.
+  // Class + manifest present, no subject picked yet -> subject cards + class-wide advanced file search
   if (currentClass && manifest && !subject) {
-    // Manifest has literally nothing yet (e.g. freshly added class) vs. the
-    // stream filter narrowing an otherwise-populated manifest down to zero
-    // matches — these need different empty-state copy, so the check has to
-    // happen before the stream filter above has had a chance to hide
-    // everything.
     const manifestIsEmpty = !manifest.subjects.length && !manifest.miscCount;
     return <main className="container content-page">
       <BackLink to={sourcePath} search={{}} label={t('resources.backToClasses')} />
       <div className="content-header">
         <h1>{title}<span className="text-primary">.</span></h1>
-        <div className="content-header-row">
-          <p className="page-intro">{currentClass.board} · Class {currentClass.grade} · {t('resources.chooseSubject')}</p>
-          {!!subjectCards.length && (
-            <label className="search-field resource-search"><Search size={18} /><input aria-label={t('resources.searchClass.label')} placeholder={t('resources.searchClass.placeholder')} value={subjectQuery} onChange={e => setSubjectQuery(e.target.value)} /></label>
-          )}
-        </div>
+        <p className="page-intro">{currentClass.board} · Class {currentClass.grade} · {t('resources.chooseSubject')}</p>
       </div>
+
+      {!manifestIsEmpty && (
+        <AdvancedSearchBar
+          filters={classFilters}
+          onChange={setClassFilters}
+          facets={classSearch.facets}
+          totalCount={classSearch.enrichedItems.length}
+          matchCount={classSearch.results.length}
+          loading={classHitsLoading}
+          error={classSearch.error}
+          placeholder="Search filenames in this class (e.g. DAIS prelim, phy 2025 -solution)…"
+          ariaLabel={t('resources.searchClass.label')}
+          showSubjectFilter
+          onActivateCorpus={() => setClassCorpusRequested(true)}
+        />
+      )}
+
       {!manifestIsEmpty && currentClass.board === 'ISC' && (
         <div className="resource-stream-tabs"><StreamTabs stream={activeStream} onChange={next => onStreamChange?.(next)} /></div>
       )}
-      {!!subjectCards.length && <p className="library-note resource-total-count">{subjectCards.reduce((sum, s) => sum + s.count, 0)} {t('resources.filesLabel')} {t('resources.total')}</p>}
-      {isClassSearchActive ? (
-        <>
-          <p className="library-note resource-search-count">{t('resources.search.resultsFor').replace('{query}', trimmedSubjectQuery).replace('{n}', classHitsLoading && !classHits ? '…' : String(filteredClassHits.length))}</p>
-          {classHitsLoading && !classHits ? (
-            <div className="resource-file-grid" aria-busy="true">
-              {Array.from({ length: 6 }).map((_, i) => <div key={i} className="doxx-card doxx-card-skeleton" aria-hidden="true" />)}
-            </div>
-          ) : filteredClassHits.length ? (
-            filteredClassHits.length > 60 ? (
-              <VirtualFileGrid
-                className="resource-file-grid-virtual resource-search-results"
-                items={filteredClassHits}
-                renderItem={hit => <HitFileCard key={hit.item.id} hit={hit} sourcePath={sourcePath} stream={stream} />}
-              />
-            ) : (
-              <div className="resource-file-grid resource-search-results">
-                {filteredClassHits.map(hit => <HitFileCard key={hit.item.id} hit={hit} sourcePath={sourcePath} stream={stream} />)}
-              </div>
-            )
+      {!!subjectCards.length && !classSearch.isActive && (
+        <p className="library-note resource-total-count">{subjectCards.reduce((sum, s) => sum + s.count, 0).toLocaleString()} {t('resources.filesLabel')} {t('resources.total')}</p>
+      )}
+
+      {classSearch.isActive ? (
+        classHitsLoading && !classHits ? (
+          <div className="resource-file-grid resource-search-results" aria-busy="true">
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="doxx-card doxx-card-skeleton" aria-hidden="true" />)}
+          </div>
+        ) : classSearch.results.length ? (
+          classSearch.results.length > 60 ? (
+            <VirtualFileGrid
+              className="resource-file-grid-virtual resource-search-results"
+              items={classSearch.results}
+              minColumnWidth={210}
+              rowHeight={208}
+              renderItem={entry => (
+                <HitFileCard
+                  key={`${entry.subject}-${entry.item.id}`}
+                  entry={entry}
+                  sourcePath={sourcePath}
+                  stream={stream}
+                  highlightTerms={classSearch.highlightTerms}
+                  matchMode={classFilters.matchMode}
+                  rawQuery={classFilters.query}
+                />
+              )}
+            />
           ) : (
-            <div className="empty-state"><Search /><h3>{t('resources.searchClass.empty.title')}</h3><p>{t('resources.searchClass.empty.text')}</p></div>
-          )}
-        </>
+            <div className="resource-file-grid resource-search-results">
+              {classSearch.results.map(entry => (
+                <HitFileCard
+                  key={`${entry.subject}-${entry.item.id}`}
+                  entry={entry}
+                  sourcePath={sourcePath}
+                  stream={stream}
+                  highlightTerms={classSearch.highlightTerms}
+                  matchMode={classFilters.matchMode}
+                  rawQuery={classFilters.query}
+                />
+              ))}
+            </div>
+          )
+        ) : (
+          <div className="empty-state">
+            <Search />
+            <h3>{t('resources.searchClass.empty.title')}</h3>
+            <p>Try broadening your filename terms, switching match mode, or clearing active filters.</p>
+            <Button variant="outline" onClick={() => setClassFilters(createDefaultFilters())}>Reset filters</Button>
+          </div>
+        )
       ) : manifestIsEmpty ? (
-        // Dataset exists for this class but its manifest lists zero
-        // subjects (e.g. freshly added class awaiting content) — same
-        // "being prepared" message as a class with no dataset at all,
-        // not the "no search results" copy below.
         <div className="empty-state"><BookOpen /><h3>{t('resources.classNote.title')}</h3><p>{t('resources.classNote.text')}</p></div>
       ) : !subjectCards.length ? (
-        // The manifest has subjects, but none of them belong to the
-        // selected stream — same "clear filters" framing as the class
-        // hub's own stream tabs use.
         <div className="empty-state"><BookOpen /><h3>{t('hub.empty.title')}</h3><p>{t('hub.empty.text')}</p></div>
-      ) : filteredSubjectCards.length ? (
+      ) : (
         <div className="doxx-cards">
-          {filteredSubjectCards.map(s => {
+          {subjectCards.map(s => {
             const isMisc = s.subject === MISC_LABEL;
             const isFeatured = s.subject === 'Featured';
             const meta = findSubjectMeta(s.subject);
@@ -655,16 +696,13 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
             );
           })}
         </div>
-      ) : (
-        <div className="empty-state"><Search /><h3>{t('resources.searchSubjects.empty.title')}</h3><p>{t('resources.searchSubjects.empty.text')}</p></div>
       )}
       {source === 'community' && disclaimer}
     </main>;
   }
 
-  // Subject picked -> file list first; clicking a file opens the player view.
+  // Subject picked -> file list + subject-wide advanced filename search & filters
   if (currentClass && manifest && subject) {
-    // Subject shard failed to load -> same treatment as the manifest error.
     if (subjectError) {
       return <main className="container content-page">
         <BackLink to={sourcePath} search={{ class: classSlug, stream }} label={t('hub.backToSubjects')} />
@@ -679,7 +717,6 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
       </main>;
     }
 
-    // Still fetching the subject's own JSON shard -> lightweight loading state.
     if (!subjectDataReady) {
       return <main className="container content-page">
         <BackLink to={sourcePath} search={{ class: classSlug, stream }} label={t('hub.backToSubjects')} />
@@ -691,13 +728,6 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
       </main>;
     }
 
-    // `subjectItems`/`editorFolders`/`groups` are computed earlier in the
-    // component (hoisted there to respect the Rules of Hooks, since they
-    // feed useFuseSearch); `groups` is irrelevant while a file search is
-    // active, since the search view below renders `filteredFiles` as a flat
-    // list instead of the grouped sections.
-    // `activeFolderScope` (derived above from the `?file=` param) narrows the
-    // sidebar to the folder the open file lives in.
     const sidebarGroups = activeFolderScope
       ? [{ group: activeFolderScope.name, items: activeFolderScope.children.filter((c): c is ResourceItem => !isFolderNode(c)) }]
       : groups;
@@ -710,9 +740,6 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
         <ResourceWatch
           groups={sidebarGroups}
           active={activeFile}
-          // Switching files from inside the viewer replaces the current
-          // history entry, so Back from any file returns to the subject grid
-          // instead of stepping through every file clicked in the sidebar.
           onSelect={item => openFile(item, { replace: true })}
           shareUrl={`${getSiteOrigin()}${sourcePath}?class=${encodeURIComponent(classSlug ?? '')}&subject=${encodeURIComponent(subject ?? '')}&file=${encodeURIComponent(activeFile.id)}`}
           viewContext={{ classSlug, subject, source }}
@@ -725,37 +752,65 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
       <BackLink to={sourcePath} search={{ class: classSlug, stream }} label={t('hub.backToSubjects')} />
       <div className="content-header">
         <h1>{subject}<span className="text-primary">.</span></h1>
-        <div className="content-header-row">
-          <p className="page-intro">{currentClass.board} · Class {currentClass.grade} · {title}</p>
-          <label className="search-field resource-search"><Search size={18} /><input aria-label={t('resources.searchFiles.label')} placeholder={t('resources.searchFiles.placeholder')} value={fileQuery} onChange={e => setFileQuery(e.target.value)} /></label>
-        </div>
+        <p className="page-intro">{currentClass.board} · Class {currentClass.grade} · {title}</p>
       </div>
-      {/* Sits above this subject's file grid and renders nothing at all when
-          no file here has been opened in the past week — a quiet subject keeps
-          exactly the page it had before. Hidden while a file search is active,
-          since the results replace the grid it ranks. */}
-      {!isFileSearchActive && <ClassTrending classSlug={classSlug} subject={subject} />}
-      {isFileSearchActive ? (
-        <>
-          <p className="library-note resource-search-count">{t('resources.search.resultsFor').replace('{query}', fileQuery.trim()).replace('{n}', String(filteredFiles.length))}</p>
-          {filteredFiles.length ? (
-            filteredFiles.length > 60 ? (
-              <VirtualFileGrid
-                className="resource-file-grid-virtual resource-search-results"
-                items={filteredFiles}
-                renderItem={item => <FileCard key={item.id} item={item} onClick={() => { openFile(item); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />}
-              />
-            ) : (
-              <div className="resource-file-grid resource-search-results">
-                {filteredFiles.map(item => (
-                  <FileCard key={item.id} item={item} onClick={() => { openFile(item); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
-                ))}
-              </div>
-            )
+
+      {rawSubjectFiles.length > 0 && (
+        <AdvancedSearchBar
+          filters={fileFilters}
+          onChange={setFileFilters}
+          facets={fileSearch.facets}
+          totalCount={fileSearch.enrichedItems.length}
+          matchCount={fileSearch.results.length}
+          error={fileSearch.error}
+          placeholder={`Filter ${rawSubjectFiles.length.toLocaleString()} ${subject} filenames (e.g. prelim 2025, "specimen", -solution)…`}
+          ariaLabel={t('resources.searchFiles.label')}
+          showGroupFilter
+        />
+      )}
+
+      {!fileSearch.isActive && <ClassTrending classSlug={classSlug} subject={subject} />}
+      {fileSearch.isActive ? (
+        fileSearch.results.length ? (
+          fileSearch.results.length > 60 ? (
+            <VirtualFileGrid
+              className="resource-file-grid-virtual resource-search-results"
+              items={fileSearch.results}
+              minColumnWidth={210}
+              rowHeight={208}
+              renderItem={entry => (
+                <SearchFileCard
+                  key={entry.item.id}
+                  entry={entry}
+                  highlightTerms={fileSearch.highlightTerms}
+                  matchMode={fileFilters.matchMode}
+                  rawQuery={fileFilters.query}
+                  onClick={() => { openFile(entry.item); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                />
+              )}
+            />
           ) : (
-            <div className="empty-state"><Search /><h3>{t('resources.searchFiles.empty.title')}</h3><p>{t('resources.searchFiles.empty.text')}</p></div>
-          )}
-        </>
+            <div className="resource-file-grid resource-search-results">
+              {fileSearch.results.map(entry => (
+                <SearchFileCard
+                  key={entry.item.id}
+                  entry={entry}
+                  highlightTerms={fileSearch.highlightTerms}
+                  matchMode={fileFilters.matchMode}
+                  rawQuery={fileFilters.query}
+                  onClick={() => { openFile(entry.item); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                />
+              ))}
+            </div>
+          )
+        ) : (
+          <div className="empty-state">
+            <Search />
+            <h3>{t('resources.searchFiles.empty.title')}</h3>
+            <p>No files matched your filename query and active filters. Try relaxing a filter or switching to Smart mode.</p>
+            <Button variant="outline" onClick={() => setFileFilters(createDefaultFilters())}>Reset filters</Button>
+          </div>
+        )
       ) : subjectItems.length || editorFolders?.length ? (
         displayGroups.map(section => (
           <GroupSection
@@ -776,49 +831,85 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
     </main>;
   }
 
-  const filtered = classes.filter(c => `${c.board} class ${c.grade} ${c.label}`.toLowerCase().includes(query.toLowerCase()));
-
+  // Top-level source view (no class picked yet) -> source-wide advanced file search + class grid
   return <main className="container content-page">
     <BackLink to="/resources" search={{}} label={t('resources.backToSources')} />
     <div className="content-header">
       <h1>{title}<span className="text-primary">.</span></h1>
-      <div className="content-header-row">
-        <p className="page-intro">{desc}</p>
-        <label className="search-field resource-search"><Search size={18} /><input aria-label={t('resources.searchSource.label')} placeholder={t('resources.searchSource.placeholder')} value={query} onChange={e => setQuery(e.target.value)} /></label>
-      </div>
+      <p className="page-intro">{desc}</p>
     </div>
-    {isSourceSearchActive ? (
-      <>
-        <p className="library-note resource-search-count">{t('resources.search.resultsFor').replace('{query}', trimmedQuery).replace('{n}', sourceHitsLoading && !sourceHits ? '…' : String(filteredSourceHits.length))}</p>
-        {sourceHitsLoading && !sourceHits ? (
-          <div className="resource-file-grid" aria-busy="true">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="doxx-card doxx-card-skeleton" aria-hidden="true" />)}
-          </div>
-        ) : filteredSourceHits.length ? (
-          filteredSourceHits.length > 60 ? (
-            <VirtualFileGrid
-              className="resource-file-grid-virtual resource-search-results"
-              items={filteredSourceHits}
-              renderItem={hit => {
-                const cls = classes.find(c => c.slug === hit.classSlug);
-                return <HitFileCard key={hit.item.id} hit={hit} sourcePath={sourcePath} classLabel={cls ? `Class ${cls.grade}` : undefined} />;
-              }}
-            />
-          ) : (
-            <div className="resource-file-grid resource-search-results">
-              {filteredSourceHits.map(hit => {
-                const cls = classes.find(c => c.slug === hit.classSlug);
-                return <HitFileCard key={hit.item.id} hit={hit} sourcePath={sourcePath} classLabel={cls ? `Class ${cls.grade}` : undefined} />;
-              })}
-            </div>
-          )
+
+    <AdvancedSearchBar
+      filters={sourceFilters}
+      onChange={setSourceFilters}
+      facets={sourceSearch.facets}
+      totalCount={sourceSearch.enrichedItems.length}
+      matchCount={sourceSearch.results.length}
+      loading={sourceHitsLoading}
+      error={sourceSearch.error}
+      placeholder={`Search all ${source === 'cisce' ? 'official CISCE' : 'community'} filenames across classes (e.g. physics 2025, sqp, -solution)…`}
+      ariaLabel={t('resources.searchSource.label')}
+      showClassFilter
+      showSubjectFilter
+      onActivateCorpus={() => setSourceCorpusRequested(true)}
+    />
+
+    {sourceSearch.isActive ? (
+      sourceHitsLoading && !sourceHits ? (
+        <div className="resource-file-grid resource-search-results" aria-busy="true">
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="doxx-card doxx-card-skeleton" aria-hidden="true" />)}
+        </div>
+      ) : sourceSearch.results.length ? (
+        sourceSearch.results.length > 60 ? (
+          <VirtualFileGrid
+            className="resource-file-grid-virtual resource-search-results"
+            items={sourceSearch.results}
+            minColumnWidth={210}
+            rowHeight={208}
+            renderItem={entry => {
+              const cls = classes.find(c => c.slug === entry.classSlug);
+              return (
+                <HitFileCard
+                  key={`${entry.classSlug}-${entry.subject}-${entry.item.id}`}
+                  entry={entry}
+                  sourcePath={sourcePath}
+                  classLabel={cls ? `${cls.board} ${cls.grade}` : undefined}
+                  highlightTerms={sourceSearch.highlightTerms}
+                  matchMode={sourceFilters.matchMode}
+                  rawQuery={sourceFilters.query}
+                />
+              );
+            }}
+          />
         ) : (
-          <div className="empty-state"><Search /><h3>{t('resources.searchSource.empty.title')}</h3><p>{t('resources.searchSource.empty.text')}</p></div>
-        )}
-      </>
+          <div className="resource-file-grid resource-search-results">
+            {sourceSearch.results.map(entry => {
+              const cls = classes.find(c => c.slug === entry.classSlug);
+              return (
+                <HitFileCard
+                  key={`${entry.classSlug}-${entry.subject}-${entry.item.id}`}
+                  entry={entry}
+                  sourcePath={sourcePath}
+                  classLabel={cls ? `${cls.board} ${cls.grade}` : undefined}
+                  highlightTerms={sourceSearch.highlightTerms}
+                  matchMode={sourceFilters.matchMode}
+                  rawQuery={sourceFilters.query}
+                />
+              );
+            })}
+          </div>
+        )
+      ) : (
+        <div className="empty-state">
+          <Search />
+          <h3>{t('resources.searchSource.empty.title')}</h3>
+          <p>Try a different filename keyword, switch match mode, or reset your active filters.</p>
+          <Button variant="outline" onClick={() => setSourceFilters(createDefaultFilters())}>Reset filters</Button>
+        </div>
+      )
     ) : (
       <div className="class-grid">
-        {filtered.map(c => (
+        {classes.map(c => (
           <Link key={c.slug} to={sourcePath} search={{ class: c.slug, subject }} className={`class-card tone-${c.tone}`}>
             <span className="subject-icon"><c.icon /></span>
             <h3>Class {c.grade}</h3>
@@ -828,7 +919,6 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
         ))}
       </div>
     )}
-    {!isSourceSearchActive && !filtered.length && <div className="empty-state"><Search /><h3>{t('resources.empty.title')}</h3><p>{t('resources.empty.text')}</p></div>}
     {disclaimer}
   </main>;
 }

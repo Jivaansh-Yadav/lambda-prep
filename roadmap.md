@@ -7,3 +7,9 @@
 - [x] Remove sign-in page and button.
 - [x] Consistent card sizes/fonts; collapse secondary text on mobile.
 - [x] ISC Class 12 community collection: 794 files indexed from the ISC.exe 2.0 community directory, renamed to the ICSE-10 convention (`Subject - Topic - Doc type - Detail.pdf`), bucket-sorted into chapter folders plus document-type groups.
+- [x] Advanced filename search across the whole library (7,668 files): smart/exact/starts-with/regex modes, `-exclude`, wildcards, folder-scope search, facets for source, class, subject, year, format and collection, plus relevance/exact/name/year/size sorting.
+- [x] Recent searches with keyboard navigation ("/" to focus, ↑/↓ to walk, Enter to open, Esc to dismiss).
+- [x] Sticky search toolbar that collapses its quick-filter chips once pinned, so results stay readable while refining.
+- [x] Search state in the URL (`?q=`), so a search survives the trip into a file view and Back returns to the same result list.
+- [x] Phone filter sheet with a pinned header and a "Show N files" footer, replacing the inline panel that pushed results below the fold.
+- [x] Search hits scroll with the page (window-virtualized grid) instead of trapping the wheel in a nested 600px scroller.
