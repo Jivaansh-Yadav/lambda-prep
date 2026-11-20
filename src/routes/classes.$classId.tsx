@@ -7,6 +7,7 @@ import { getCurriculumClass, findSubjectInClass } from '@/lib/curriculum';
 import { useI18n } from '@/lib/i18n';
 import { StreamTabs } from '@/components/lambda-prep/stream-tabs';
 import { BackLink } from '@/components/lambda-prep/back-link';
+import { ModalClose, ModalRoot, ModalSurface, ModalTitle } from '@/components/lambda-prep/modal';
 
 export const Route = createFileRoute('/classes/$classId')({
   loader: ({ params }) => { const current = classes.find(c => c.slug === params.classId); if (!current) throw notFound(); return { current: { slug: current.slug, grade: current.grade, roman: current.roman, board: current.board, label: current.label } }; },
@@ -56,11 +57,16 @@ function ClassHubView({ current }: { current: CurrentClass }) {
     {!available.length && <div className="empty-state"><Search /><h3>{t('hub.empty.title')}</h3><p>{t('hub.empty.text')}</p><Button variant="outline" onClick={() => { setSearch(''); setStream('All'); }}>{t('hub.clearFilters')}</Button></div>}
     <div className="hub-note"></div>
     {selected && (
-      <div className="modal-backdrop" onClick={() => setSelected(null)}>
-        <section role="dialog" aria-modal="true" aria-labelledby="subject-title" className="subject-dialog" onClick={e => e.stopPropagation()}>
-          <Button size="icon" variant="ghost" className="dialog-close" aria-label={t('hub.closeSubject')} onClick={() => setSelected(null)}><X /></Button>
+      // Radix Dialog supplies the focus trap, Escape dismissal, focus
+      // restoration and scroll lock the hand-rolled backdrop never had
+      // (GH #13). The visible styling is still .modal-backdrop/.subject-dialog.
+      <ModalRoot open onOpenChange={open => { if (!open) setSelected(null); }}>
+        <ModalSurface overlayClassName="modal-backdrop" className="subject-dialog">
+          <ModalClose asChild>
+            <Button size="icon" variant="ghost" className="dialog-close" aria-label={t('hub.closeSubject')}><X /></Button>
+          </ModalClose>
           <p className="eyebrow">{current.board} · Class {current.grade}</p>
-          <h2 id="subject-title">{selected}</h2>
+          <ModalTitle asChild><h2>{selected}</h2></ModalTitle>
 
           <div className="dialog-path-group">
             <p className="dialog-path-label">{t('hub.detail.classesLabel')}</p>
@@ -94,8 +100,8 @@ function ClassHubView({ current }: { current: CurrentClass }) {
           </div>
 
           <Button variant="outline" className="dialog-back-btn" onClick={() => setSelected(null)}><ArrowLeft /> {t('hub.backToSubjects')}</Button>
-        </section>
-      </div>
+        </ModalSurface>
+      </ModalRoot>
     )}
   </main>;
 }

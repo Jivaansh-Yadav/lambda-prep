@@ -3,6 +3,14 @@ import { Check, Copy, Mail, MessageSquareText, Share2, X } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { DiscordIcon, RedditIcon, TelegramIcon, WhatsAppIcon } from '@/components/lambda-prep/brand-icons';
 import { ShareQr } from '@/components/lambda-prep/share-qr';
+import {
+  ModalClose,
+  ModalDescription,
+  ModalRoot,
+  ModalSurface,
+  ModalTitle,
+  ModalTrigger,
+} from '@/components/lambda-prep/modal';
 
 interface ShareWidgetProps {
   /** Fully-qualified, directly-shareable URL for this specific resource. */
@@ -107,19 +115,11 @@ export function ShareWidget({ url, title, compact = false, onShare }: ShareWidge
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const { hint, show } = useTransientHint();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const [canNativeShare, setCanNativeShare] = useState(false);
 
   useEffect(() => {
     setCanNativeShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function');
   }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open]);
 
   const message = t('share.messageTemplate').replace('{name}', title).replace('{url}', url);
   const emailSubject = t('share.emailSubject').replace('{name}', title);
@@ -209,42 +209,42 @@ export function ShareWidget({ url, title, compact = false, onShare }: ShareWidge
 
   return (
     <div className="share-widget">
-      {compact ? (
-        <button
-          type="button"
-          className="doxx-sandbox-fullscreen"
-          onClick={() => setOpen(true)}
-          aria-haspopup="dialog"
-          aria-label={t('share.button')}
-          title={t('share.button')}
-        >
-          <Share2 size={16} />
-        </button>
-      ) : (
-        <button type="button" className="share-trigger-btn" onClick={() => setOpen(true)} aria-haspopup="dialog">
-          <Share2 size={16} /> {t('share.button')}
-        </button>
-      )}
+      <ModalRoot open={open} onOpenChange={setOpen}>
+        <ModalTrigger asChild>
+          {compact ? (
+            <button type="button" className="doxx-sandbox-fullscreen" aria-label={t('share.button')} title={t('share.button')}>
+              <Share2 size={16} />
+            </button>
+          ) : (
+            <button type="button" className="share-trigger-btn">
+              <Share2 size={16} /> {t('share.button')}
+            </button>
+          )}
+        </ModalTrigger>
 
-      {open && (
-        <div className="share-modal-backdrop" onClick={() => setOpen(false)}>
-          <section
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="share-dialog-title"
-            className="share-dialog"
-            onClick={e => e.stopPropagation()}
-          >
-            <button type="button" className="share-dialog-close" aria-label="Close" onClick={() => setOpen(false)}><X size={18} /></button>
-            <h2 id="share-dialog-title">{t('share.title')}</h2>
-            <p className="share-dialog-description">{t('share.description')}</p>
+        <ModalSurface
+          overlayClassName="share-modal-backdrop"
+          className="share-dialog"
+          describedBy="share-dialog-description"
+        >
+            <ModalClose asChild>
+              <button type="button" className="share-dialog-close" aria-label={t('nav.close')}><X size={18} /></button>
+            </ModalClose>
+            <ModalTitle>{t('share.title')}</ModalTitle>
+            <ModalDescription id="share-dialog-description" className="share-dialog-description">{t('share.description')}</ModalDescription>
 
             <div className="share-link-card">
               <ShareQr url={url} title={title} />
 
               <div className="share-link-row">
-                <input className="share-link-input" type="text" readOnly value={url} onFocus={e => e.currentTarget.select()} />
+                <input
+                  className="share-link-input"
+                  type="text"
+                  readOnly
+                  value={url}
+                  aria-label={t('share.copyLink')}
+                  onFocus={e => e.currentTarget.select()}
+                />
                 <button type="button" className="share-copy-btn" onClick={handleCopy}>
                   <Copy size={15} /> {t('share.copyLink')}
                 </button>
@@ -278,9 +278,8 @@ export function ShareWidget({ url, title, compact = false, onShare }: ShareWidge
             <span className="share-hint" role="status" aria-live="polite">
               {hint && <>{hint.ok ? <Check size={13} /> : null} {hint.message}</>}
             </span>
-          </section>
-        </div>
-      )}
+        </ModalSurface>
+      </ModalRoot>
     </div>
   );
 }
