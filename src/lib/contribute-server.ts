@@ -313,12 +313,11 @@ function mapContributionRow(r: Record<string, unknown>): AdminContributionRow {
  * other admin read. */
 export const getAdminContributions = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
-    return { passcode: d.passcode };
+    const d = data as Record<string, unknown>;
+    return {};
   })
   .handler(async ({ data }): Promise<AdminContributionsResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     if (!sql) {
       return { configured: false, reason: "Database isn't configured (missing DATABASE_URL)." };
@@ -351,16 +350,15 @@ export type UpdateContributionStatusResult = { ok: true } | { ok: false; reason:
  * fold a contribution in. */
 export const updateContributionStatus = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown; id?: unknown; status?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    const d = data as { id?: unknown; status?: unknown };
     if (typeof d?.id !== "number") throw new Error("Missing id");
     if (d.status !== "pending" && d.status !== "approved" && d.status !== "rejected") {
       throw new Error("Invalid status");
     }
-    return { passcode: d.passcode, id: d.id, status: d.status };
+    return { id: d.id, status: d.status };
   })
   .handler(async ({ data }): Promise<UpdateContributionStatusResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     if (!sql) return { ok: false, reason: "Database isn't configured." };
 

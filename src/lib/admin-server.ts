@@ -38,11 +38,18 @@ import { chunkWindows } from "./rum-windows";
 import { BoundedStore } from "./rate-limit";
 import { constantTimeEquals } from "./secure-compare";
 import { clientIp } from "./client-ip";
+import { clearAdminSessionCookie, hasAdminSession, setAdminSessionCookie } from "./admin-session";
+import { formatRetryAfter } from "./rate-limit";
 
 // No fallback default: an unset ADMIN_PASSCODE must disable admin access
 // entirely rather than silently accepting a hardcoded, publicly-visible
 // value. See GH issue #7.
 const ADMIN_PASSCODE = process.env["ADMIN_PASSCODE"];
+// Signs the admin session cookie (see admin-session.ts). A dedicated var is
+// preferable so rotating passcodes does not invalidate live sessions, but
+// falling back to the passcode keeps existing deployments working and means
+// rotating the passcode always invalidates every session.
+const ADMIN_SESSION_SECRET = process.env["ADMIN_SESSION_SECRET"] || ADMIN_PASSCODE;
 if (!ADMIN_PASSCODE) {
   console.warn(
     "[admin] ADMIN_PASSCODE is not set — the admin panel will reject every passcode until it's configured."
@@ -140,14 +147,24 @@ function verifyPasscode(passcode: string): { ok: boolean; lockedOutMs?: number }
   return { ok: false };
 }
 
-export const requirePasscode = createServerOnlyFn((passcode: string) => {
-  const { ok, lockedOutMs } = verifyPasscode(passcode);
-  if (!ok) {
-    if (lockedOutMs) {
-      throw new Error(`Too many attempts. Try again in ${Math.ceil(lockedOutMs / 1000)}s.`);
-    }
-    throw new Error("Unauthorized");
-  }
+export const requirePasscode = createServerOnlyFn(async () => {
+  // Cookie only. The passcode is accepted in exactly one place —
+  // checkAdminPasscode — and exchanged there for this cookie (GH #3).
+  if (ADMIN_SESSION_SECRET && (await hasAdminSession(ADMIN_SESSION_SECRET))) return;
+  throw new Error("Unauthorized");
+});
+
+
+/** True when this browser already holds a valid admin session cookie. */
+export const getAdminSession = createServerFn({ method: "GET" }).handler(async () => {
+  if (!ADMIN_SESSION_SECRET) return { authenticated: false };
+  return { authenticated: await hasAdminSession(ADMIN_SESSION_SECRET) };
+});
+
+/** Locks the panel on this browser without waiting for the TTL to expire. */
+export const lockAdminSession = createServerFn({ method: "POST" }).handler(async () => {
+  clearAdminSessionCookie();
+  return { ok: true };
 });
 
 // Daily bucket for the traffic chart. Both numbers come from the same
@@ -389,15 +406,19 @@ type CloudflareGraphQLResponse = {
 export const checkAdminPasscode = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     const d = data as { passcode?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    if (typeof d?.passcode !== "string" || !d.passcode) throw new Error("Missing passcode");
     return { passcode: d.passcode };
   })
   .handler(async ({ data }) => {
     const result = verifyPasscode(data.passcode);
     if (result.lockedOutMs) {
-      return { ok: false, lockedOutSeconds: Math.ceil(result.lockedOutMs / 1000) };
+      return { ok: false as const, lockedOutSeconds: Math.ceil(result.lockedOutMs / 1000) };
     }
-    return { ok: result.ok };
+    if (!result.ok) return { ok: false as const };
+    // Exchange the passcode for an HttpOnly session cookie here: this is the
+    // last request that has to carry the secret (GH issue #3).
+    if (ADMIN_SESSION_SECRET) await setAdminSessionCookie(ADMIN_SESSION_SECRET);
+    return { ok: true as const };
   });
 
 type CachedPayload = {
@@ -588,11 +609,9 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
  */
 export const getAdminTraffic = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown; range?: unknown; force?: unknown; host?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    const d = data as { range?: unknown; force?: unknown; host?: unknown };
     if (d.range !== undefined && !isAdminRange(d.range)) throw new Error("Invalid range");
     return {
-      passcode: d.passcode,
       range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE,
       // Refresh sets this: drop the cached row and read Cloudflare live.
       force: d.force === true,
@@ -601,7 +620,7 @@ export const getAdminTraffic = createServerFn({ method: "POST" })
     };
   })
   .handler(async ({ data }): Promise<AdminTrafficResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
     const range = data.range;
     const host = resolveTrackedHost(data.host);
 
@@ -926,18 +945,16 @@ async function fetchRumFromCloudflare(range: AdminRange, host: string): Promise<
  */
 export const getAdminRum = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown; range?: unknown; force?: unknown; host?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    const d = data as { range?: unknown; force?: unknown; host?: unknown };
     if (d.range !== undefined && !isAdminRange(d.range)) throw new Error("Invalid range");
     return {
-      passcode: d.passcode,
       range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE,
       force: d.force === true,
       host: typeof d.host === "string" ? d.host : undefined,
     };
   })
   .handler(async ({ data }): Promise<AdminRumResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
     const range = data.range;
     const host = resolveTrackedHost(data.host);
 
@@ -1017,13 +1034,12 @@ export type AdminCampaignResult =
  * count over a small table. */
 export const getAdminCampaignSources = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown; range?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    const d = data as { range?: unknown };
     if (d.range !== undefined && !isAdminRange(d.range)) throw new Error("Invalid range");
-    return { passcode: d.passcode, range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE };
+    return { range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE };
   })
   .handler(async ({ data }): Promise<AdminCampaignResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
     if (!sql) {
       return {
         configured: false,
@@ -1089,8 +1105,7 @@ export type ManageResourcesResult =
 
 export const getManageResources = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown; folderId?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    const d = data as { folderId?: unknown };
     if (d.folderId !== undefined && typeof d.folderId !== "string") throw new Error("Invalid folderId");
     // Drive IDs are letters/digits/'-'/'_' only. Rejecting anything else
     // here keeps a crafted value from ever reaching the Drive query
@@ -1098,10 +1113,10 @@ export const getManageResources = createServerFn({ method: "POST" })
     if (typeof d.folderId === "string" && !isDriveId(d.folderId)) {
       throw new Error("Invalid folderId: expected a Drive folder ID");
     }
-    return { passcode: d.passcode, folderId: d.folderId as string | undefined };
+    return { folderId: d.folderId as string | undefined };
   })
   .handler(async ({ data }): Promise<ManageResourcesResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     const config = await getDriveIntegrationConfig();
     if (!config) {
@@ -1136,19 +1151,17 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB — generous for PDFs/docs/sl
 export const uploadResource = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     if (!(data instanceof FormData)) throw new Error("Expected FormData");
-    const passcode = data.get("passcode");
     const file = data.get("file");
     const folderId = data.get("folderId");
-    if (typeof passcode !== "string") throw new Error("Missing passcode");
     if (!(file instanceof File)) throw new Error("Missing file");
     if (folderId !== null && typeof folderId !== "string") throw new Error("Invalid folderId");
     if (typeof folderId === "string" && folderId && !isDriveId(folderId)) {
       throw new Error("Invalid folderId: expected a Drive folder ID");
     }
-    return { passcode, file, folderId: (folderId as string | null) || undefined };
+    return { file, folderId: (folderId as string | null) || undefined };
   })
   .handler(async ({ data }): Promise<UploadResourceResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     const config = await getDriveIntegrationConfig();
     if (!config) {
@@ -1176,14 +1189,13 @@ export type RenameResourceResult = { ok: true; file: DriveFileEntry } | { ok: fa
 
 export const renameResource = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown; fileId?: unknown; newName?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    const d = data as { fileId?: unknown; newName?: unknown };
     if (typeof d?.fileId !== "string" || !isDriveId(d.fileId)) throw new Error("Invalid fileId");
     if (typeof d?.newName !== "string" || !d.newName.trim()) throw new Error("Missing newName");
-    return { passcode: d.passcode, fileId: d.fileId, newName: d.newName.trim() };
+    return { fileId: d.fileId, newName: d.newName.trim() };
   })
   .handler(async ({ data }): Promise<RenameResourceResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     const config = await getDriveIntegrationConfig();
     if (!config) {
@@ -1202,13 +1214,12 @@ export type DeleteResourceResult = { ok: true } | { ok: false; reason: string };
 
 export const deleteResource = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown; fileId?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    const d = data as { fileId?: unknown };
     if (typeof d?.fileId !== "string" || !isDriveId(d.fileId)) throw new Error("Invalid fileId");
-    return { passcode: d.passcode, fileId: d.fileId };
+    return { fileId: d.fileId };
   })
   .handler(async ({ data }): Promise<DeleteResourceResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     const config = await getDriveIntegrationConfig();
     if (!config) {
@@ -1229,11 +1240,10 @@ export const deleteResource = createServerFn({ method: "POST" })
 export const getDriveWriteCapability = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     const d = data as { passcode?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
-    return { passcode: d.passcode };
+    return {};
   })
   .handler(async ({ data }): Promise<{ hasOAuth: boolean }> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
     const config = await getDriveIntegrationConfig();
     return { hasOAuth: hasOAuthCredentials(config) };
   });
@@ -1259,11 +1269,10 @@ export type TriggerDatasetUpdateResult =
 export const triggerDatasetUpdate = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     const d = data as { passcode?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
-    return { passcode: d.passcode };
+    return {};
   })
   .handler(async ({ data }): Promise<TriggerDatasetUpdateResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     const config = await getGithubIntegrationConfig();
     if (!config) {
@@ -1388,13 +1397,12 @@ function driveFileUrl(fileId: string): string {
  */
 export const getAdminResourceStats = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown; range?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    const d = data as { range?: unknown };
     if (d.range !== undefined && !isAdminRange(d.range)) throw new Error("Invalid range");
-    return { passcode: d.passcode, range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE };
+    return { range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE };
   })
   .handler(async ({ data }): Promise<AdminResourceStatsResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     if (!sql) {
       return { configured: false, reason: "Database isn't configured (missing DATABASE_URL)." };
@@ -1558,11 +1566,10 @@ export type DatasetUpdateOverviewResult =
 export const getDatasetUpdateOverview = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     const d = data as { passcode?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
-    return { passcode: d.passcode };
+    return {};
   })
   .handler(async ({ data }): Promise<DatasetUpdateOverviewResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     const config = await getGithubIntegrationConfig();
     if (!config) {
@@ -1618,13 +1625,12 @@ export type DatasetUpdateStatusResult =
 
 export const getDatasetUpdateStatus = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown; runId?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    const d = data as { runId?: unknown };
     if (typeof d?.runId !== "number") throw new Error("Missing runId");
-    return { passcode: d.passcode, runId: d.runId };
+    return { runId: d.runId };
   })
   .handler(async ({ data }): Promise<DatasetUpdateStatusResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     const config = await getGithubIntegrationConfig();
     if (!config) {
@@ -1652,11 +1658,10 @@ export type AdminLatestCommitResult =
 export const getAdminLatestCommit = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     const d = data as { passcode?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
-    return { passcode: d.passcode };
+    return {};
   })
   .handler(async ({ data }): Promise<AdminLatestCommitResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     const config = await getGithubIntegrationConfig();
     if (!config) {

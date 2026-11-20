@@ -58,6 +58,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   checkAdminPasscode,
+  getAdminSession,
+  lockAdminSession,
   getAdminTraffic,
   getAdminRum,
   getAdminCampaignSources,
@@ -140,16 +142,14 @@ export const Route = createFileRoute('/admin')({
   component: AdminPage,
 });
 
-// Deliberately in-memory only (no sessionStorage/localStorage): the admin
-// unlock must require the passcode again on every full page reload, not
-// just when the browser tab is closed. A module-level variable persists
-// across client-side route navigation within the same page load (so the
-// unlock survives moving around /admin) but resets the moment the page is
-// actually reloaded, since that re-evaluates this module from scratch.
-let adminSessionPasscode: string | null = null;
-
+// The passcode never lives in this module any more. Unlocking exchanges it
+// for an HttpOnly session cookie (see admin-session.ts), so the browser can
+// be reloaded or navigated within /admin without holding the secret, and a
+// simple GET tells us whether the cookie is still valid. Sessions expire on
+// their own after eight hours (GH issue #3).
 function AdminPage() {
-  const [authed, setAuthed] = useState(() => adminSessionPasscode !== null);
+  // null = still asking the server; false = locked; true = unlocked.
+  const [authed, setAuthed] = useState<boolean | null>(null);
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -181,14 +181,16 @@ function AdminPage() {
     try {
       const check = await checkAdminPasscode({ data: { passcode } });
       if (check.ok) {
-        adminSessionPasscode = passcode;
-        // Drop anything fetched before the passcode existed (a deep link to
+        // The response set an HttpOnly session cookie; drop the typed value
+        // immediately so it isn't sitting in React state for the session.
+        setPasscode('');
+        // Drop anything fetched before the session existed (a deep link to
         // ?section=analytics mounts this component unauthenticated, so its
-        // effects can fire with an empty passcode and set sticky errors).
+        // effects can fire and set sticky errors).
         setResult(null);
         setRumResult(null);
         setAuthed(true);
-        await loadTraffic(passcode, range);
+        await loadTraffic(range);
       } else if (check.lockedOutSeconds) {
         setError(`Too many attempts. Try again in ${check.lockedOutSeconds}s.`);
       } else {
@@ -212,11 +214,11 @@ function AdminPage() {
     return typeof window === 'undefined' ? undefined : window.location.hostname;
   }
 
-  async function loadTraffic(code: string, forRange: AdminRange, force = false) {
+  async function loadTraffic(forRange: AdminRange, force = false) {
     setLoading(true);
     setError(null);
     try {
-      const data = await getAdminTraffic({ data: { passcode: code, range: forRange, force, host: viewHost() } });
+      const data = await getAdminTraffic({ data: { range: forRange, force, host: viewHost() } });
       setResult(data);
     } catch (error) {
       // Surface what actually failed. Server functions throw for a rejected
@@ -232,23 +234,39 @@ function AdminPage() {
             : 'Could not load analytics. Try unlocking again.',
       );
       setAuthed(false);
-      adminSessionPasscode = null;
+      void lockAdminSession();
     } finally {
       setLoading(false);
     }
   }
 
+  // Ask the server once whether this browser already holds a session, so a
+  // reload keeps the panel unlocked without re-typing the passcode.
+  useEffect(() => {
+    let cancelled = false;
+    getAdminSession()
+      .then((session) => {
+        if (!cancelled) setAuthed(session.authenticated);
+      })
+      .catch(() => {
+        if (!cancelled) setAuthed(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     if (authed && !result && !loading) {
-      void loadTraffic(adminSessionPasscode ?? '', range);
+      void loadTraffic(range);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed]);
 
-  async function loadRum(code: string, forRange: AdminRange, force = false) {
+  async function loadRum(forRange: AdminRange, force = false) {
     setRumLoading(true);
     try {
-      const data = await getAdminRum({ data: { passcode: code, range: forRange, force, host: viewHost() } });
+      const data = await getAdminRum({ data: { range: forRange, force, host: viewHost() } });
       setRumResult(data);
     } catch (error) {
       const message = error instanceof Error ? error.message.trim() : '';
@@ -258,7 +276,7 @@ function AdminPage() {
         // "not configured" card with setup instructions that don't apply.
         setError('Passcode rejected — unlock again.');
         setAuthed(false);
-        adminSessionPasscode = null;
+        void lockAdminSession();
         setRumResult(null);
         return;
       }
@@ -278,24 +296,24 @@ function AdminPage() {
   // opened, rather than on every page load — it's a second Cloudflare
   // credential/dataset the admin may not have configured yet.
   useEffect(() => {
-    if (!authed || !adminSessionPasscode) return;
+    if (!authed) return;
     if (openSection === 'analytics' && !rumResult && !rumLoading) {
-      void loadRum(adminSessionPasscode, range);
+      void loadRum(range);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSection, authed]);
 
-  async function loadCampaign(code: string, forRange: AdminRange) {
+  async function loadCampaign(forRange: AdminRange) {
     setCampaignLoading(true);
     try {
-      const data = await getAdminCampaignSources({ data: { passcode: code, range: forRange } });
+      const data = await getAdminCampaignSources({ data: { range: forRange } });
       setCampaignResult(data);
     } catch (error) {
       const message = error instanceof Error ? error.message.trim() : '';
       if (/unauthor/i.test(message)) {
         setError('Passcode rejected — unlock again.');
         setAuthed(false);
-        adminSessionPasscode = null;
+        void lockAdminSession();
         setCampaignResult(null);
         return;
       }
@@ -314,9 +332,9 @@ function AdminPage() {
   // Same lazy pattern as the RUM panel: Neon-only, but there's no reason to
   // query it on the dashboard page where the table isn't rendered.
   useEffect(() => {
-    if (!authed || !adminSessionPasscode) return;
+    if (!authed) return;
     if (openSection === 'analytics' && !campaignResult && !campaignLoading) {
-      void loadCampaign(adminSessionPasscode, range);
+      void loadCampaign(range);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSection, authed]);
@@ -332,10 +350,10 @@ function AdminPage() {
     setRumResult(null);
     setCampaignResult(null);
     if (authed) {
-      void loadTraffic(adminSessionPasscode ?? '', next);
+      void loadTraffic(next);
       if (openSection === 'analytics') {
-        void loadRum(adminSessionPasscode ?? '', next);
-        void loadCampaign(adminSessionPasscode ?? '', next);
+        void loadRum(next);
+        void loadCampaign(next);
       }
     }
   }
@@ -348,12 +366,24 @@ function AdminPage() {
   // navigating), but an explicit Refresh never does.
   function refreshAll() {
     if (!authed) return;
-    void loadTraffic(adminSessionPasscode ?? '', range, true);
+    void loadTraffic(range, true);
     if (openSection === 'analytics') {
-      void loadRum(adminSessionPasscode ?? '', range, true);
+      void loadRum(range, true);
       // Campaign sources read Neon directly — nothing cached to bypass.
-      void loadCampaign(adminSessionPasscode ?? '', range);
+      void loadCampaign(range);
     }
+  }
+
+  // First paint asks the server about the cookie; show a placeholder instead
+  // of flashing the unlock form at an admin who is already signed in.
+  if (authed === null) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center px-4">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="animate-spin" size={16} /> Checking session…
+        </p>
+      </div>
+    );
   }
 
   if (!authed) {
@@ -561,11 +591,25 @@ function AdminPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => loadTraffic(adminSessionPasscode ?? '', range, true)}
+            onClick={() => loadTraffic(range, true)}
             disabled={loading}
             title="Read Cloudflare live — clears this range's cached numbers first"
           >
             {loading ? 'Refreshing…' : 'Refresh'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              void lockAdminSession();
+              setAuthed(false);
+              setResult(null);
+              setRumResult(null);
+              setCampaignResult(null);
+            }}
+            title="Sign out of this browser and require the passcode again"
+          >
+            Lock
           </Button>
         </div>
       </div>
@@ -998,7 +1042,7 @@ function LatestCommitCard() {
   const [state, setState] = useState<AdminLatestCommitResult | null>(null);
 
   useEffect(() => {
-    getAdminLatestCommit({ data: { passcode: adminSessionPasscode ?? '' } })
+    getAdminLatestCommit({ data: {} })
       .then(setState)
       .catch(() => setState({ ok: false, reason: 'Could not load the latest commit.' }));
   }, []);
@@ -1043,7 +1087,6 @@ function LatestCommitCard() {
 }
 
 type DatasetWorkflowPanelProps = {
-  getPasscode: () => string;
   rootFolderUrl: string | null;
   /** Called when a tracked run reaches a terminal state, so the caller can
    * refresh the Drive listing it just rebuilt. */
@@ -1161,7 +1204,7 @@ function CategoryRow({ group, now }: { group: CategoryGroup; now: number }) {
  * is newest on mount — including a scheduled one it didn't start — and
  * keeps polling until the run finishes.
  */
-function DatasetWorkflowPanel({ getPasscode, rootFolderUrl, onFinished }: DatasetWorkflowPanelProps) {
+function DatasetWorkflowPanel({ rootFolderUrl, onFinished }: DatasetWorkflowPanelProps) {
   const [run, setRun] = useState<WorkflowRunStatus | null>(null);
   const [history, setHistory] = useState<WorkflowRunSummary[]>([]);
   const [meta, setMeta] = useState<{ repo: string; workflowFile: string } | null>(null);
@@ -1188,7 +1231,7 @@ function DatasetWorkflowPanel({ getPasscode, rootFolderUrl, onFinished }: Datase
   async function loadOverview() {
     setLoadingOverview(true);
     try {
-      const res = await getDatasetUpdateOverview({ data: { passcode: getPasscode() } }).catch(() => null);
+      const res = await getDatasetUpdateOverview({ data: {} }).catch(() => null);
       if (!res) {
         setError('Could not reach the GitHub integration.');
         return;
@@ -1226,7 +1269,7 @@ function DatasetWorkflowPanel({ getPasscode, rootFolderUrl, onFinished }: Datase
 
     const tick = async () => {
       const res = await getDatasetUpdateStatus({
-        data: { passcode: getPasscode(), runId: trackedRunId },
+        data: { runId: trackedRunId },
       }).catch(() => null);
       if (cancelled) return;
       if (!res || !res.ok) {
@@ -1261,7 +1304,7 @@ function DatasetWorkflowPanel({ getPasscode, rootFolderUrl, onFinished }: Datase
     setTriggering(true);
     setError(null);
     try {
-      const res = await triggerDatasetUpdate({ data: { passcode: getPasscode() } });
+      const res = await triggerDatasetUpdate({ data: {} });
       if (!res.ok) {
         setError(res.reason);
         // A run was already going — track it instead of dead-ending on the
@@ -1269,7 +1312,7 @@ function DatasetWorkflowPanel({ getPasscode, rootFolderUrl, onFinished }: Datase
         if (res.activeRunId) {
           setTrackedRunId(res.activeRunId);
           const status = await getDatasetUpdateStatus({
-            data: { passcode: getPasscode(), runId: res.activeRunId },
+            data: { runId: res.activeRunId },
           }).catch(() => null);
           if (status?.ok) setRun(status.status);
         }
@@ -1503,15 +1546,12 @@ function ManageResourcesCard() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  function getPasscode() {
-    return adminSessionPasscode ?? '';
-  }
 
   async function load(folderId?: string) {
     setLoading(true);
     setError(null);
     try {
-      const data = await getManageResources({ data: { passcode: getPasscode(), folderId } });
+      const data = await getManageResources({ data: { folderId } });
       setState(data);
     } catch {
       setError('Could not load resources.');
@@ -1522,7 +1562,7 @@ function ManageResourcesCard() {
 
   useEffect(() => {
     void load();
-    getDriveWriteCapability({ data: { passcode: getPasscode() } })
+    getDriveWriteCapability({ data: {} })
       .then((res) => setHasOAuth(res.hasOAuth))
       .catch(() => setHasOAuth(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1551,7 +1591,6 @@ function ManageResourcesCard() {
     setUploadError(null);
     try {
       const form = new FormData();
-      form.set('passcode', getPasscode());
       form.set('file', file);
       if (currentFolderId) form.set('folderId', currentFolderId);
       const res = await uploadResource({ data: form });
@@ -1582,7 +1621,7 @@ function ManageResourcesCard() {
     setRenameSaving(true);
     setRenameError(null);
     try {
-      const res = await renameResource({ data: { passcode: getPasscode(), fileId, newName } });
+      const res = await renameResource({ data: { fileId, newName } });
       if (res.ok) {
         setRenamingId(null);
         void load(currentFolderId);
@@ -1601,7 +1640,7 @@ function ManageResourcesCard() {
     setDeleting(true);
     setDeleteError(null);
     try {
-      const res = await deleteResource({ data: { passcode: getPasscode(), fileId: deleteTarget.id } });
+      const res = await deleteResource({ data: { fileId: deleteTarget.id } });
       if (res.ok) {
         setDeleteTarget(null);
         void load(currentFolderId);
@@ -1648,7 +1687,6 @@ function ManageResourcesCard() {
         {uploadError && <p className="mb-4 text-sm text-destructive">{uploadError}</p>}
 
         <DatasetWorkflowPanel
-          getPasscode={getPasscode}
           rootFolderUrl={state?.configured ? state.rootFolderUrl : null}
           onFinished={() => void load(currentFolderIdRef.current)}
         />
@@ -1880,15 +1918,12 @@ function ResourceStatsCard() {
   const [error, setError] = useState<string | null>(null);
   const [openTab, setOpenTab] = useState<StatsTab | null>(null);
 
-  function getPasscode() {
-    return adminSessionPasscode ?? '';
-  }
 
   async function load(forRange: AdminRange) {
     setLoading(true);
     setError(null);
     try {
-      const data = await getAdminResourceStats({ data: { passcode: getPasscode(), range: forRange } });
+      const data = await getAdminResourceStats({ data: { range: forRange } });
       setState(data);
     } catch {
       setError('Could not load resource stats.');
@@ -2275,15 +2310,12 @@ function ContributedResourcesCard() {
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  function getPasscode() {
-    return adminSessionPasscode ?? '';
-  }
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getAdminContributions({ data: { passcode: getPasscode() } });
+      const data = await getAdminContributions({ data: {} });
       setState(data);
     } catch {
       setError('Could not load contributions.');
@@ -2300,7 +2332,7 @@ function ContributedResourcesCard() {
   async function setStatus(row: AdminContributionRow, status: ContributionStatus) {
     setUpdatingId(row.id);
     try {
-      const res = await updateContributionStatus({ data: { passcode: getPasscode(), id: row.id, status } });
+      const res = await updateContributionStatus({ data: { id: row.id, status } });
       if (res.ok) {
         setState((prev) =>
           prev && prev.configured
@@ -2478,15 +2510,12 @@ function ContactMessagesCard() {
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  function getPasscode() {
-    return adminSessionPasscode ?? '';
-  }
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getAdminContactMessages({ data: { passcode: getPasscode() } });
+      const data = await getAdminContactMessages({ data: {} });
       setState(data);
     } catch {
       setError('Could not load messages.');
@@ -2503,7 +2532,7 @@ function ContactMessagesCard() {
   async function setStatus(row: AdminContactMessageRow, status: ContactMessageStatus) {
     setUpdatingId(row.id);
     try {
-      const res = await updateContactMessageStatus({ data: { passcode: getPasscode(), id: row.id, status } });
+      const res = await updateContactMessageStatus({ data: { id: row.id, status } });
       if (res.ok) {
         setState((prev) =>
           prev && prev.configured

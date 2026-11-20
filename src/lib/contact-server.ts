@@ -150,12 +150,11 @@ function mapContactMessageRow(r: Record<string, unknown>): AdminContactMessageRo
 
 export const getAdminContactMessages = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
-    return { passcode: d.passcode };
+    const d = data as Record<string, unknown>;
+    return {};
   })
   .handler(async ({ data }): Promise<AdminContactMessagesResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     if (!sql) {
       return { configured: false, reason: "Database isn't configured (missing DATABASE_URL)." };
@@ -180,16 +179,15 @@ export type UpdateContactMessageStatusResult = { ok: true } | { ok: false; reaso
 
 export const updateContactMessageStatus = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { passcode?: unknown; id?: unknown; status?: unknown };
-    if (typeof d?.passcode !== "string") throw new Error("Missing passcode");
+    const d = data as { id?: unknown; status?: unknown };
     if (typeof d?.id !== "number") throw new Error("Missing id");
     if (d.status !== "unread" && d.status !== "read" && d.status !== "archived") {
       throw new Error("Invalid status");
     }
-    return { passcode: d.passcode, id: d.id, status: d.status };
+    return { id: d.id, status: d.status };
   })
   .handler(async ({ data }): Promise<UpdateContactMessageStatusResult> => {
-    requirePasscode(data.passcode);
+    await requirePasscode();
 
     if (!sql) return { ok: false, reason: "Database isn't configured." };
 
