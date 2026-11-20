@@ -9,6 +9,7 @@ const en: Dict = {
   'nav.resources': 'Resources',
   'nav.open': 'Open navigation',
   'nav.close': 'Close navigation',
+  'nav.skipToContent': 'Skip to main content',
   'nav.chooseClass': 'Choose your class',
 
   'hero.tagline': 'Discover premium content for your academics',

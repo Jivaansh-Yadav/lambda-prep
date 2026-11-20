@@ -114,7 +114,9 @@ function NotFoundComponent() {
   }, []);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    // A landmark, not a bare div: this view replaces the route component, so
+    // without <main> here the 404 has no main region at all.
+    <main className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <TornBookIcon />
         <h1 className="mt-4 text-7xl font-bold text-foreground">404</h1>
@@ -148,7 +150,7 @@ function NotFoundComponent() {
         </div>
       </div>
       <ContactMessageDialog open={contactOpen} onOpenChange={setContactOpen} />
-    </div>
+    </main>
   );
 }
 
@@ -161,7 +163,7 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           {t('error.title')}
@@ -187,7 +189,7 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
           </a>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -282,6 +284,23 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Keyboard users land here first. The link is visually hidden until focused,
+ * and every route renders its content inside #main-content, so one Tab
+ * jumps past the header and nav.
+ */
+function SkipToContent() {
+  const { t } = useI18n();
+  return (
+    <a
+      href="#main-content"
+      className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring"
+    >
+      {t('nav.skipToContent')}
+    </a>
+  );
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
@@ -296,9 +315,15 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <I18nProvider>
-          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <SkipToContent />
           <Header />
-          <Outlet />
+          {/* Skipping to #main-content focuses this wrapper and lands the
+              reader on the page's own <main>; tabIndex={-1} makes a non-form
+              element an accepted focus target. */}
+          <div id="main-content" tabIndex={-1} className="outline-none">
+            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+            <Outlet />
+          </div>
           <Footer />
         </I18nProvider>
       </ThemeProvider>

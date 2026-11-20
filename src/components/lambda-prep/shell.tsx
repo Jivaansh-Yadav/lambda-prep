@@ -47,6 +47,7 @@ function ThemeToggle() {
 export function Header() {
   const [open, setOpen] = useState(false);
   const navRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const { t } = useI18n();
   const pathname = useRouterState({ select: s => s.location.pathname });
   const isHome = pathname === '/';
@@ -66,7 +67,22 @@ export function Header() {
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [open]);
 
-  return <header className="site-header"><div className="container header-inner" ref={navRef}><Brand /><Link to="/contribute" onClick={() => setOpen(false)} className="header-contribute-link"><HeartHandshake size={15} /><span className="header-contribute-full">{t('footer.contribute')}</span><span className="header-contribute-compact">{t('header.contributeShort')}</span><span className="header-contribute-sheen" aria-hidden="true" /></Link><nav className={`quick-nav ${open ? 'is-open' : ''}`} aria-label="Main navigation">
+  // Escape closes the drawer. Without this the only ways out were clicking a
+  // link or clicking elsewhere — keyboard users got stuck in the open menu.
+  useEffect(() => {
+    if (!open) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      // Send focus back to the trigger so the next Tab continues from the
+      // header instead of restarting at the top of the document.
+      menuButtonRef.current?.focus();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open]);
+
+  return <header className="site-header"><div className="container header-inner" ref={navRef}><Brand /><Link to="/contribute" onClick={() => setOpen(false)} className="header-contribute-link"><HeartHandshake size={15} /><span className="header-contribute-full">{t('footer.contribute')}</span><span className="header-contribute-compact">{t('header.contributeShort')}</span><span className="header-contribute-sheen" aria-hidden="true" /></Link><nav id="primary-nav" className={`quick-nav ${open ? 'is-open' : ''}`} aria-label="Main navigation">
     <Link to="/" onClick={() => setOpen(false)} className={`nav-link ${isHome ? 'nav-active' : ''}`}><Home size={16} />{t('nav.home')}</Link>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -91,7 +107,7 @@ export function Header() {
     <Link to="/doxxmarks" search={{}} onClick={() => setOpen(false)} className="nav-link" activeProps={{ className: 'nav-link nav-active' }}><MonitorPlay size={16} />{t('nav.doxxmarks')}</Link>
     <Link to="/resources" onClick={() => setOpen(false)} className="nav-link" activeProps={{ className: 'nav-link nav-active' }}><FileStack size={16} />{t('nav.resources')}</Link>
     <ThemeToggle />
-  </nav><Button variant="ghost" size="icon" className="mobile-menu" aria-label={open ? t('nav.close') : t('nav.open')} onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</Button></div></header>;
+  </nav><Button ref={menuButtonRef} variant="ghost" size="icon" className="mobile-menu" aria-label={open ? t('nav.close') : t('nav.open')} aria-expanded={open} aria-controls="primary-nav" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</Button></div></header>;
 }
 
 export function Footer() {
