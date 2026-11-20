@@ -7,6 +7,7 @@ import {
   type DriveFileEntry,
 } from "./drive-integration-server";
 import { requirePasscode } from "./admin-server";
+import { allowedExtensionList, isTrustedDriveLink, resolveUploadType } from "./upload-policy";
 
 // ---------------------------------------------------------------------
 // Community "Contribute a resource" flow: lets any visitor submit a
@@ -38,6 +39,13 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // mirrors the admin upload limit
 const MAX_TEXT_LENGTH = 2000;
 const MAX_ALIAS_LENGTH = 200;
 const MAX_CONTACT_LENGTH = 300;
+// Short by design: these end up in the admin queue and, after review, in
+// Drive folder/filename positions.
+const MAX_FILE_NAME_LENGTH = 180;
+const MAX_CLASS_LENGTH = 40;
+const MAX_CLASS_LABEL_LENGTH = 80;
+const MAX_SUBJECT_LENGTH = 80;
+const MAX_LINK_LENGTH = 512;
 
 // Light per-IP throttle — same shape as the resource-feedback limiter:
 // a brake on casual spam/abuse, not a hard security boundary. In-memory
@@ -65,14 +73,6 @@ function isRateLimited(ip: string): boolean {
   return rec.count > MAX_SUBMISSIONS;
 }
 
-function isHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
 
 // Formats a Date as "YYYY-MM-DD HH-mm-ss" for embedding in a filename —
 // no colons or slashes, which Drive (and most filesystems) tolerate fine
@@ -119,6 +119,10 @@ function validateDetails(d: Record<string, unknown>): ContributeDetails {
   if (!classSlug) throw new Error("Class is required.");
   if (!subject) throw new Error("Subject is required.");
   if (!contactMethod) throw new Error("A way to reach you is required.");
+  if (fileName.length > MAX_FILE_NAME_LENGTH) throw new Error("That file name is too long.");
+  if (classSlug.length > MAX_CLASS_LENGTH) throw new Error("Invalid class.");
+  if (classLabel.length > MAX_CLASS_LABEL_LENGTH) throw new Error("Invalid class label.");
+  if (subject.length > MAX_SUBJECT_LENGTH) throw new Error("Subject is too long.");
   if (description.length > MAX_TEXT_LENGTH) throw new Error(`Description must be ${MAX_TEXT_LENGTH} characters or fewer.`);
   if (contributorAlias.length > MAX_ALIAS_LENGTH) throw new Error("Alias is too long.");
   if (contactMethod.length > MAX_CONTACT_LENGTH) throw new Error("Contact details are too long.");
@@ -144,6 +148,12 @@ export const submitContributionUpload = createServerFn({ method: "POST" })
     if (file.size > MAX_UPLOAD_BYTES) {
       throw new Error(`File is too large (max ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB).`);
     }
+    // The extension decides the stored type; the browser's `file.type` is
+    // caller-controlled and is never trusted (GH #2).
+    const resolved = resolveUploadType(file.name);
+    if (!resolved) {
+      throw new Error(`Unsupported file type. Upload a ${allowedExtensionList()} file, or share a Drive link instead.`);
+    }
     const details = validateDetails({
       fileName: data.get("fileName") ?? file.name,
       classSlug: data.get("classSlug"),
@@ -153,7 +163,7 @@ export const submitContributionUpload = createServerFn({ method: "POST" })
       contributorAlias: data.get("contributorAlias"),
       contactMethod: data.get("contactMethod"),
     });
-    return { file, details };
+    return { file, details, mimeType: resolved.mimeType };
   })
   .handler(async ({ data }): Promise<SubmitContributionResult> => {
     if (!sql) return { ok: false, reason: "Contribution storage isn't configured." };
@@ -174,7 +184,7 @@ export const submitContributionUpload = createServerFn({ method: "POST" })
         config,
         {
           name: driveFileName,
-          mimeType: data.file.type || "application/octet-stream",
+          mimeType: data.mimeType,
           data: arrayBuffer,
         },
         CONTRIBUTIONS_FOLDER_ID
@@ -222,7 +232,12 @@ export const submitContributionLink = createServerFn({ method: "POST" })
     const d = data as Record<string, unknown>;
     const driveLink = typeof d["driveLink"] === "string" ? d["driveLink"].trim() : "";
     if (!driveLink) throw new Error("A Drive link is required.");
-    if (!isHttpUrl(driveLink)) throw new Error("That doesn't look like a valid link.");
+    if (driveLink.length > MAX_LINK_LENGTH) throw new Error("That link is too long.");
+    // Drive/Docs hosts only: this queue is clicked by admins, so it must not
+    // become a parking spot for arbitrary links (GH #2).
+    if (!isTrustedDriveLink(driveLink)) {
+      throw new Error("Share an https link from drive.google.com or docs.google.com.");
+    }
     const details = validateDetails(d);
     return { driveLink, details };
   })

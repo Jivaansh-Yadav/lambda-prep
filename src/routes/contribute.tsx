@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { classes, getSubjects, pageHead } from '@/lib/lambda-prep';
 import { submitContributionLink, submitContributionUpload } from '@/lib/contribute-server';
+import { UPLOAD_ACCEPT, allowedExtensionList, resolveUploadType } from '@/lib/upload-policy';
 
 export const Route = createFileRoute('/contribute')({
   head: () =>
@@ -73,6 +74,13 @@ function ContributePage() {
     }
     if (next.size > MAX_UPLOAD_BYTES) {
       setErrorMessage(`That file is too large (max ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB). Try sharing a Drive link instead.`);
+      return;
+    }
+    // Mirrors the server allowlist so the rejection happens before a 50 MB
+    // upload attempt (GH #2). The server checks again — this is the friendly
+    // half of the same rule.
+    if (!resolveUploadType(next.name)) {
+      setErrorMessage(`That file type isn't accepted. Use ${allowedExtensionList()}, or share a Drive link instead.`);
       return;
     }
     setErrorMessage(null);
@@ -328,6 +336,7 @@ function ContributePage() {
                 ref={fileInputRef}
                 type="file"
                 className="hidden"
+                accept={UPLOAD_ACCEPT}
                 onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
               />
               {file ? (

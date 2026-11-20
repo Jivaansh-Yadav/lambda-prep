@@ -27,6 +27,7 @@
 
 import { SignJWT, importPKCS8 } from "jose";
 import { sql } from "./db";
+import { sanitizeMimeType } from "./upload-policy";
 
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -343,7 +344,7 @@ export async function uploadDriveFile(
   const parts: Uint8Array[] = [
     encoder.encode(
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
-        `--${boundary}\r\nContent-Type: ${file.mimeType}\r\n\r\n`
+        `--${boundary}\r\nContent-Type: ${sanitizeMimeType(file.mimeType)}\r\n\r\n`
     ),
     new Uint8Array(file.data),
     encoder.encode(`\r\n--${boundary}--`),
