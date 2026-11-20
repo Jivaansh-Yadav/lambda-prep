@@ -18,6 +18,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { classes, getSubjects, pageHead } from '@/lib/lambda-prep';
 import { submitContributionLink, submitContributionUpload } from '@/lib/contribute-server';
 import { UPLOAD_ACCEPT, allowedExtensionList, resolveUploadType } from '@/lib/upload-policy';
+import {
+  CONTRIBUTION_FIELD_LABELS,
+  missingFields,
+  validateContribution,
+  type ContributionErrors,
+  type ContributionField,
+} from '@/lib/contribute-form';
 import { DISCORD_ICSE_LABEL, DISCORD_ISC_LABEL, communityLinks } from '@/lib/lambda-prep';
 
 export const Route = createFileRoute('/contribute')({
@@ -33,6 +40,16 @@ export const Route = createFileRoute('/contribute')({
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const OTHER_SUBJECT_VALUE = '__other__';
 
+/** DOM id of the control that owns each validated field. */
+const FIELD_CONTROL_IDS: Record<ContributionField, string> = {
+  fileName: 'contribute-filename',
+  classSlug: 'contribute-class',
+  subject: 'contribute-subject',
+  file: 'contribute-dropzone',
+  driveLink: 'contribute-drive-link',
+  contactMethod: 'contribute-contact',
+};
+
 type Method = 'upload' | 'link';
 type SubmitState = 'idle' | 'submitting' | 'done' | 'error';
 
@@ -40,6 +57,21 @@ function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** The asterisk on a required label. `aria-required` on the control carries
+ * the same information for screen readers, so the glyph is decorative. */
+function RequiredMark() {
+  return <span className="contribute-required" aria-hidden="true">*</span>;
+}
+
+function FieldError({ id, message }: { id: string; message: string | undefined }) {
+  if (!message) return null;
+  return (
+    <p className="contribute-hint is-error" id={id}>
+      {message}
+    </p>
+  );
 }
 
 function ContributePage() {
@@ -61,6 +93,10 @@ function ContributePage() {
 
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Errors only appear once the contributor has tried to submit, so an
+  // untouched form is not pre-scolded — but every field re-validates on
+  // each keystroke after that, so a message disappears as soon as it is fixed.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const selectedClass = classes.find((c) => c.slug === classSlug);
   const subjectOptions = selectedClass ? getSubjects(selectedClass.board) : [];
@@ -95,13 +131,45 @@ function ContributePage() {
     if (dropped) pickFile(dropped);
   }
 
-  const detailsValid = classSlug && (isOtherSubject ? customSubject.trim() : subject.trim()) && fileName.trim() && contactMethod.trim();
-  const methodValid = method === 'upload' ? !!file : driveLink.trim().length > 0;
-  const canSubmit = detailsValid && methodValid && submitState !== 'submitting';
+  const draft = {
+    fileName,
+    classSlug,
+    subject: resolvedSubject,
+    method,
+    hasFile: !!file,
+    driveLink,
+    contactMethod,
+  };
+  const errors: ContributionErrors = submitAttempted ? validateContribution(draft) : {};
+  const missing = missingFields(errors);
+  // The button is never disabled for missing input: a disabled button with no
+  // explanation was the bug (GH #15). Submitting runs validation, shows the
+  // messages and moves focus to the first field that needs attention.
+  const canSubmit = submitState !== 'submitting';
+
+  function focusFirstInvalid(next: ContributionErrors) {
+    const [first] = missingFields(next);
+    if (!first) return;
+    // "Other" hides the real input behind a select that already has a value,
+    // so point at the text field the contributor still has to fill in.
+    const id = first === 'subject' && isOtherSubject ? 'contribute-subject-other' : FIELD_CONTROL_IDS[first];
+    // Wait a frame so the error text is in the DOM (and announced) before focus
+    // lands on the control it belongs to.
+    requestAnimationFrame(() => {
+      document.getElementById(id)?.focus();
+    });
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (submitState === 'submitting') return;
+
+    setSubmitAttempted(true);
+    const nextErrors = validateContribution(draft);
+    if (missingFields(nextErrors).length > 0) {
+      focusFirstInvalid(nextErrors);
+      return;
+    }
 
     setSubmitState('submitting');
     setErrorMessage(null);
@@ -167,6 +235,7 @@ function ContributePage() {
     setDriveLink('');
     setSubmitState('idle');
     setErrorMessage(null);
+    setSubmitAttempted(false);
   }
 
   if (submitState === 'done') {
@@ -196,7 +265,7 @@ function ContributePage() {
         reviewed before it's added to the library — nothing goes live automatically.
       </p>
 
-      <form className="contribute-form" onSubmit={handleSubmit}>
+      <form className="contribute-form" onSubmit={handleSubmit} noValidate>
         {/* Step 1 — details */}
         <section className="contribute-section">
           <h2 className="contribute-section-title">
@@ -205,18 +274,22 @@ function ContributePage() {
 
           <div className="contribute-grid">
             <div className="contribute-field">
-              <Label htmlFor="contribute-filename">File name</Label>
+              <Label htmlFor="contribute-filename">File name<RequiredMark /></Label>
               <Input
                 id="contribute-filename"
                 placeholder="e.g. Chemical Bonding — Revision Notes.pdf"
                 value={fileName}
                 onChange={(e) => setFileName(e.target.value)}
                 maxLength={200}
+                aria-required="true"
+                aria-invalid={errors.fileName ? true : undefined}
+                aria-describedby={errors.fileName ? 'contribute-filename-error' : undefined}
               />
+              <FieldError id="contribute-filename-error" message={errors.fileName} />
             </div>
 
             <div className="contribute-field">
-              <Label htmlFor="contribute-class">Class</Label>
+              <Label htmlFor="contribute-class">Class<RequiredMark /></Label>
               <Select
                 value={classSlug}
                 onValueChange={(next) => {
@@ -225,7 +298,12 @@ function ContributePage() {
                   setCustomSubject('');
                 }}
               >
-                <SelectTrigger id="contribute-class">
+                <SelectTrigger
+                  id="contribute-class"
+                  aria-required="true"
+                  aria-invalid={errors.classSlug ? true : undefined}
+                  aria-describedby={errors.classSlug ? 'contribute-class-error' : undefined}
+                >
                   <SelectValue placeholder="Select your class" />
                 </SelectTrigger>
                 <SelectContent>
@@ -236,12 +314,18 @@ function ContributePage() {
                   ))}
                 </SelectContent>
               </Select>
+              <FieldError id="contribute-class-error" message={errors.classSlug} />
             </div>
 
             <div className="contribute-field">
-              <Label htmlFor="contribute-subject">Subject</Label>
+              <Label htmlFor="contribute-subject">Subject<RequiredMark /></Label>
               <Select value={subject} onValueChange={setSubject} disabled={!selectedClass}>
-                <SelectTrigger id="contribute-subject">
+                <SelectTrigger
+                  id="contribute-subject"
+                  aria-required="true"
+                  aria-invalid={errors.subject ? true : undefined}
+                  aria-describedby={errors.subject ? 'contribute-subject-error' : undefined}
+                >
                   <SelectValue placeholder={selectedClass ? 'Select a subject' : 'Choose a class first'} />
                 </SelectTrigger>
                 <SelectContent>
@@ -261,8 +345,12 @@ function ContributePage() {
                   value={customSubject}
                   onChange={(e) => setCustomSubject(e.target.value)}
                   maxLength={100}
+                  aria-required="true"
+                  aria-invalid={errors.subject ? true : undefined}
+                  aria-describedby={errors.subject ? 'contribute-subject-error' : undefined}
                 />
               )}
+              <FieldError id="contribute-subject-error" message={errors.subject} />
             </div>
 
             <div className="contribute-field contribute-field-wide">
@@ -317,7 +405,9 @@ function ContributePage() {
           </div>
 
           {method === 'upload' ? (
+            <>
             <div
+              id="contribute-dropzone"
               className={`contribute-dropzone ${dragOver ? 'is-dragover' : ''} ${file ? 'has-file' : ''}`}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -328,6 +418,9 @@ function ContributePage() {
               onClick={() => fileInputRef.current?.click()}
               role="button"
               tabIndex={0}
+              aria-required="true"
+              aria-invalid={errors.file ? true : undefined}
+              aria-describedby={errors.file ? 'contribute-file-error' : undefined}
               onKeyDown={(e) => {
                 if (e.key !== 'Enter' && e.key !== ' ') return;
                 // Without this, Space both opens the picker and scrolls the
@@ -367,21 +460,33 @@ function ContributePage() {
                 <>
                   <CloudUpload size={32} strokeWidth={1.5} />
                   <p className="contribute-dropzone-title">Drag and drop your file here</p>
-                  <p className="contribute-dropzone-subtitle">or click to browse — PDF, DOCX, PPTX, images (max 50MB)</p>
+                  <p className="contribute-dropzone-subtitle" id="contribute-file-hint">
+                    or click to browse — PDF, DOCX, PPTX, images (max 50MB)
+                  </p>
                 </>
               )}
             </div>
+            <FieldError id="contribute-file-error" message={errors.file} />
+            </>
           ) : (
             <div className="contribute-link-field">
-              <Label htmlFor="contribute-drive-link">Shareable Google Drive link</Label>
+              <Label htmlFor="contribute-drive-link">Shareable Google Drive link<RequiredMark /></Label>
               <Input
                 id="contribute-drive-link"
                 type="url"
                 placeholder="https://drive.google.com/file/d/..."
                 value={driveLink}
                 onChange={(e) => setDriveLink(e.target.value)}
+                aria-required="true"
+                aria-invalid={errors.driveLink ? true : undefined}
+                aria-describedby={
+                  errors.driveLink
+                    ? 'contribute-drive-link-hint contribute-drive-link-error'
+                    : 'contribute-drive-link-hint'
+                }
               />
-              <p className="contribute-hint">
+              <FieldError id="contribute-drive-link-error" message={errors.driveLink} />
+              <p className="contribute-hint" id="contribute-drive-link-hint">
                 Make sure link sharing is turned on ("Anyone with the link can view") so we can open it.
               </p>
             </div>
@@ -394,22 +499,36 @@ function ContributePage() {
             <span className="contribute-step">3</span> How can we reach you?
           </h2>
           <div className="contribute-field contribute-field-wide">
-            <Label htmlFor="contribute-contact">Contact method</Label>
+            <Label htmlFor="contribute-contact">Contact method<RequiredMark /></Label>
             <Input
               id="contribute-contact"
               placeholder="Discord, Reddit DM, email — whatever's easiest for you"
               value={contactMethod}
               onChange={(e) => setContactMethod(e.target.value)}
               maxLength={300}
+              aria-required="true"
+              aria-invalid={errors.contactMethod ? true : undefined}
+              aria-describedby={
+                errors.contactMethod
+                  ? 'contribute-contact-hint contribute-contact-error'
+                  : 'contribute-contact-hint'
+              }
             />
-            <p className="contribute-hint">
+            <FieldError id="contribute-contact-error" message={errors.contactMethod} />
+            <p className="contribute-hint" id="contribute-contact-hint">
               <MessageCircle size={13} /> Used only if we have a question about your submission, or to let
               you know once it's reviewed.
             </p>
           </div>
         </section>
 
-        {errorMessage && <p className="contribute-error">{errorMessage}</p>}
+        {errorMessage && <p className="contribute-error" role="alert">{errorMessage}</p>}
+
+        {submitAttempted && missing.length > 0 && (
+          <p className="contribute-error" role="status">
+            Still needed: {missing.map((field) => CONTRIBUTION_FIELD_LABELS[field]).join(', ')}.
+          </p>
+        )}
 
         <div className="contribute-submit-row">
           <p className="contribute-submit-note">

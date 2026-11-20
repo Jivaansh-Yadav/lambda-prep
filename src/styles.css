@@ -47,6 +47,7 @@
   --quiet: oklch(0.66 0.02 260);
   --card: var(--background);
   --chrome: rgb(245, 244, 244);
+  --destructive: oklch(0.58 0.2 25);
   --destructive-foreground: oklch(1 0 0);
   --blue-soft: oklch(0.95 0.025 260);
   --green-soft: oklch(0.95 0.028 155);
@@ -102,6 +103,7 @@
   --quiet: oklch(0.6 0.02 260);
   --card: oklch(0.19 0.017 260);
   --chrome: oklch(0.185 0.016 260);
+  --destructive: oklch(0.7 0.17 22);
   --destructive-foreground: oklch(1 0 0);
   --blue-soft: oklch(0.27 0.045 260);
   --green-soft: oklch(0.26 0.045 155);
@@ -1611,6 +1613,19 @@ body.pseudo-fullscreen-open { overflow: hidden; }
 .contribute-hint {
   display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted-foreground);
   margin-top: 2px; line-height: 1.5;
+}
+/* Required-field asterisk — the control also carries aria-required, so this is
+   a visual cue only. */
+.contribute-required { color: var(--destructive); margin-left: 2px; }
+/* Field-level message after a failed submit; replaces the neutral hint so the
+   two never stack. */
+.contribute-hint.is-error { color: var(--destructive); font-weight: 500; align-items: flex-start; }
+/* Any control the form has rejected, not just the Contribute ones. */
+input[aria-invalid="true"],
+textarea[aria-invalid="true"],
+[role="combobox"][aria-invalid="true"],
+[aria-invalid="true"].contribute-dropzone {
+  border-color: var(--destructive);
 }
 
 .contribute-method-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
