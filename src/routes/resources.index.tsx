@@ -11,7 +11,7 @@ import {
 } from '@/lib/resources-data';
 import {
   createDefaultFilters,
-  type AdvancedSearchFilters,
+  hasActiveSearchOrFilters,
   type EnrichedSearchableFile,
   type MatchMode,
   type RawSearchableFile,
@@ -24,6 +24,7 @@ import { VirtualFileGrid } from '@/components/lambda-prep/virtual-file-grid';
 import { FileRatingBadge } from '@/components/lambda-prep/file-rating-badge';
 import { Button } from '@/components/ui/button';
 import { CommunityLinks } from '@/components/lambda-prep/community-links';
+import { usePersistedFilters } from '@/lib/search-state';
 
 export const Route = createFileRoute('/resources/')({
   head: () => pageHead('Resource library', 'Find your ICSE and ISC class and explore subject-wise learning resources.', '/resources'),
@@ -94,7 +95,10 @@ function GlobalHitCard({
 /** Resource Library hub with unified global filename search across Community and Official CISCE files. */
 function Resources() {
   const { t } = useI18n();
-  const [filters, setFilters] = useState<AdvancedSearchFilters>(createDefaultFilters);
+  // Facets (and the query) are mirrored into sessionStorage so returning to
+  // the library — Back from a file, a tab reload — lands on the same filtered
+  // list instead of a blank search (GH #12).
+  const [filters, setFilters] = usePersistedFilters('library');
   const [corpusRequested, setCorpusRequested] = useState(false);
   const [libraryHits, setLibraryHits] = useState<ResourceSearchHit[] | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -158,6 +162,12 @@ function Resources() {
     setFilters(current => ({ ...current, query: initial }));
     setCorpusRequested(true);
   }, []);
+
+  // Restored filters arrive without any user interaction, so the corpus load
+  // that AdvancedSearchBar normally triggers on typing has to happen here.
+  useEffect(() => {
+    if (hasActiveSearchOrFilters(filters)) setCorpusRequested(true);
+  }, [filters]);
 
   useEffect(() => {
     if (!hydratedFromUrl.current) return;

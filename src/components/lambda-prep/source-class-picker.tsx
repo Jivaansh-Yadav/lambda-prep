@@ -7,12 +7,14 @@ import { useGoBack } from '@/hooks/use-go-back';
 import { useAdvancedFileSearch } from '@/hooks/use-advanced-file-search';
 import {
   createDefaultFilters,
+  hasActiveSearchOrFilters,
   type AdvancedSearchFilters,
   type EnrichedSearchableFile,
   type MatchMode,
   type RawSearchableFile,
 } from '@/lib/advanced-search';
 import { formatFileSize } from '@/lib/format';
+import { usePersistedFilters } from '@/lib/search-state';
 
 import {
   FILE_KIND_LABEL,
@@ -336,14 +338,28 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
   const { t } = useI18n();
   const { canGoBack, goBack } = useGoBack();
 
-  // Advanced search & filter states for each navigation level
-  const [sourceFilters, setSourceFilters] = useState<AdvancedSearchFilters>(createDefaultFilters);
-  const [classFilters, setClassFilters] = useState<AdvancedSearchFilters>(createDefaultFilters);
-  const [fileFilters, setFileFilters] = useState<AdvancedSearchFilters>(createDefaultFilters);
+  // Advanced search & filter states for each navigation level. Each level gets
+  // its own persisted slot keyed by what the student is looking at, so Back
+  // (or a reload) restores the filtered view instead of an empty search, and
+  // one class's filters never show up under another class (GH #12).
+  const [sourceFilters, setSourceFilters] = usePersistedFilters(`source:${source}`);
+  const [classFilters, setClassFilters] = usePersistedFilters(`class:${source}:${classSlug ?? ''}`);
+  const [fileFilters, setFileFilters] = usePersistedFilters(
+    `file:${source}:${classSlug ?? ''}:${subject ?? ''}`,
+  );
 
   // Lazy corpus triggers so opening the Filters drawer immediately loads facets even before typing
   const [sourceCorpusRequested, setSourceCorpusRequested] = useState(false);
   const [classCorpusRequested, setClassCorpusRequested] = useState(false);
+
+  // A restored search never passes through AdvancedSearchBar's onActivateCorpus
+  // hook, so ask for the data here whenever the restored filters are active.
+  useEffect(() => {
+    if (hasActiveSearchOrFilters(sourceFilters)) setSourceCorpusRequested(true);
+  }, [sourceFilters]);
+  useEffect(() => {
+    if (hasActiveSearchOrFilters(classFilters)) setClassCorpusRequested(true);
+  }, [classFilters]);
 
   const [sourceHits, setSourceHits] = useState<ResourceSearchHit[] | undefined>(undefined);
   const [sourceHitsLoading, setSourceHitsLoading] = useState(false);
