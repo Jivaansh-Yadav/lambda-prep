@@ -11,12 +11,13 @@ import {
 } from '@/lib/resources-data';
 import {
   createDefaultFilters,
-  formatFileSize,
   type AdvancedSearchFilters,
   type EnrichedSearchableFile,
   type MatchMode,
   type RawSearchableFile,
 } from '@/lib/advanced-search';
+import { formatFileSize } from '@/lib/format';
+
 import { useAdvancedFileSearch } from '@/hooks/use-advanced-file-search';
 import { AdvancedSearchBar, HighlightedFilename } from '@/components/lambda-prep/advanced-search-bar';
 import { VirtualFileGrid } from '@/components/lambda-prep/virtual-file-grid';

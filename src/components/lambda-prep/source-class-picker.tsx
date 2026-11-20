@@ -7,12 +7,13 @@ import { useGoBack } from '@/hooks/use-go-back';
 import { useAdvancedFileSearch } from '@/hooks/use-advanced-file-search';
 import {
   createDefaultFilters,
-  formatFileSize,
   type AdvancedSearchFilters,
   type EnrichedSearchableFile,
   type MatchMode,
   type RawSearchableFile,
 } from '@/lib/advanced-search';
+import { formatFileSize } from '@/lib/format';
+
 import {
   FILE_KIND_LABEL,
   flattenFolderFiles,

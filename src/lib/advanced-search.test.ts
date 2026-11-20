@@ -6,7 +6,6 @@ import {
   enrichSearchableFiles,
   executeAdvancedSearch,
   extractYears,
-  formatFileSize,
   getHighlightSegments,
   type RawSearchableFile,
 } from './advanced-search';
@@ -214,11 +213,8 @@ describe('advanced-search engine', () => {
     expect(byLargest.results.map(r => r.item.id)).toEqual(['2', '1']);
   });
 
-  it('highlights matched filename terms and formats file sizes cleanly', () => {
+  it('highlights matched filename terms', () => {
     const segs = getHighlightSegments('DAIS_Prelims_Physics_2025.pdf', ['dais', '2025'], 'smart', 'dais 2025');
     expect(segs.filter(s => s.match).map(s => s.text)).toEqual(['DAIS', '2025']);
-    expect(formatFileSize(2816465)).toBe('2.7 MB');
-    expect(formatFileSize(450000)).toBe('439 KB');
-    expect(formatFileSize(null)).toBeNull();
   });
 });

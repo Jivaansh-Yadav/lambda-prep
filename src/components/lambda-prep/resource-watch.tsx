@@ -11,6 +11,7 @@ import { ShareWidget } from '@/components/lambda-prep/share-widget';
 import { recordResourceView } from '@/lib/views-server';
 import { formatDayLabel } from '@/lib/time-labels';
 import { recordResourceShare, getResourceSharesBatch } from '@/lib/shares-server';
+import { formatFileSize } from '@/lib/format';
 
 interface ResourceWatchProps {
   /** Items grouped by their original folder/section name, in display order. */
@@ -198,13 +199,13 @@ export function ResourceWatch({ groups, active, onSelect, shareUrl }: ResourceWa
       .sort()
       .at(-1) ?? null
   );
-  const formatSize = (value?: string | number | null) => {
-    if (value === null || value === undefined) return null;
-    const bytes = typeof value === 'string' ? Number(value) : value;
-    if (!Number.isFinite(bytes) || bytes <= 0) return null;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-  const sizeLabel = formatSize(active.size);
+  // `size` arrives as a Drive-style byte string; formatFileSize() switches
+  // units the same way the search result cards do, so a 40 KB worksheet reads
+  // "40 KB" here instead of the misleading "0.0 MB" an unconditional
+  // megabyte conversion produced.
+  const sizeBytes = active.size == null ? null : Number(active.size);
+  const sizeLabel =
+    sizeBytes !== null && Number.isFinite(sizeBytes) ? formatFileSize(sizeBytes) : null;
 
   return (
     <div className="doxx-watch resource-watch">

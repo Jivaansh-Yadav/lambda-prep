@@ -936,11 +936,3 @@ export function getHighlightSegments(
   }
   return segments;
 }
-
-export function formatFileSize(sizeBytes: number | null): string | null {
-  if (sizeBytes === null || sizeBytes <= 0) return null;
-  if (sizeBytes < 1024) return `${sizeBytes} B`;
-  if (sizeBytes < 1024 * 1024) return `${Math.round(sizeBytes / 1024)} KB`;
-  const mb = sizeBytes / (1024 * 1024);
-  return `${mb >= 10 ? mb.toFixed(0) : mb.toFixed(1)} MB`;
-}
