@@ -4,7 +4,9 @@ import { HlsJsVideo } from '@videojs/react/media/hlsjs-video';
 import { VideoPlayer } from '@videojs/react/video';
 import { VideoSkin } from '@/components/videojs/video/skin';
 import { useFullscreen } from '@/hooks/use-fullscreen';
+import { useFrameLoad } from '@/hooks/use-frame-load';
 import { useI18n } from '@/lib/i18n';
+import { FrameStatus } from '@/components/lambda-prep/frame-status';
 import { ShareWidget } from '@/components/lambda-prep/share-widget';
 import { DOXX_CATEGORIES, categoryMeta, type DoxxCategory } from '@/lib/doxx-categories';
 
@@ -100,8 +102,12 @@ function PlaylistSection({ category, lessons, active, onSelect }: { category: Do
 }
 
 function SandboxedFrame({ src, title, shareUrl }: { src: string; title: string; shareUrl: string }) {
+  const { t } = useI18n();
   const wrapRef = useRef<HTMLDivElement>(null);
   const { isFullscreen, toggleFullscreen } = useFullscreen(wrapRef);
+  // The frame remounts on a fullscreen toggle (see below), and a remount is a
+  // fresh boot: the skeleton and the slow-load escape hatch start over with it.
+  const frame = useFrameLoad(`${isFullscreen ? 'fullscreen' : 'inline'}|${src}`);
 
   return (
     <div className="doxx-sandbox-frame doxx-player-frame" ref={wrapRef}>
@@ -133,13 +139,21 @@ function SandboxedFrame({ src, title, shareUrl }: { src: string; title: string; 
         allowFullScreen
         loading="lazy"
         referrerPolicy="no-referrer"
+        onLoad={frame.handleLoad}
+      />
+      <FrameStatus
+        loading={frame.isLoading}
+        slow={frame.isSlow}
+        openHref={src}
+        openLabel={t('resources.watch.openActivity')}
       />
       <div className="resource-pdf-toolbar">
         <button
           type="button"
           className="doxx-sandbox-fullscreen"
           onClick={toggleFullscreen}
-          aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          aria-label={isFullscreen ? t('resources.watch.exitFullscreen') : t('resources.watch.fullscreen')}
+          title={isFullscreen ? t('resources.watch.exitFullscreen') : t('resources.watch.fullscreen')}
         >
           {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
         </button>

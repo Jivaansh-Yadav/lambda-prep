@@ -117,7 +117,12 @@ const en: Dict = {
   // Revision notes are plain GCS PDF URLs, not Drive files — saying "Google
   // Drive" there sent readers looking for a Drive UI that never appeared.
   'resources.watch.openPdf': 'Open PDF in new tab',
+  'resources.watch.openActivity': 'Open activity in a new tab',
   'resources.watch.download': 'Download',
+  'resources.watch.loadingPreview': 'Loading preview\u2026',
+  // Shown over an embedded viewer that has stayed blank long enough to be
+  // blocked; always followed by the direct-open label.
+  'resources.watch.notLoading': 'Not loading?',
   'resources.watch.darkModeOn': 'Switch to dark reading mode',
   'resources.watch.darkModeOff': 'Switch to normal reading mode',
   'resources.watch.fileList': 'Files in this section',

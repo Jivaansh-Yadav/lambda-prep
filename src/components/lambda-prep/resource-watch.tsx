@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Contrast, Download, ExternalLink, Eye, FileText, Maximize, Minimize, Share2 } from 'lucide-react';
 import { useFullscreen } from '@/hooks/use-fullscreen';
+import { useFrameLoad } from '@/hooks/use-frame-load';
+import { usePersistedFlag } from '@/hooks/use-persisted-flag';
 import { useI18n } from '@/lib/i18n';
 import { getGroupLabel, type ResourceItem } from '@/lib/resources-data';
 import { VirtualFileGrid } from '@/components/lambda-prep/virtual-file-grid';
+import { FrameStatus } from '@/components/lambda-prep/frame-status';
 import { ResourceRatingControl } from '@/components/lambda-prep/resource-rating';
 import { FileRatingBadge } from '@/components/lambda-prep/file-rating-badge';
 import { ResourceFeedbackControl } from '@/components/lambda-prep/resource-feedback';
@@ -12,6 +15,7 @@ import { recordResourceView } from '@/lib/views-server';
 import { formatDayLabel } from '@/lib/time-labels';
 import { recordResourceShare, getResourceSharesBatch } from '@/lib/shares-server';
 import { formatFileSize } from '@/lib/format';
+import { PDF_INVERT_STORAGE_KEY } from '@/lib/viewer-preferences';
 
 interface ResourceWatchProps {
   /** Items grouped by their original folder/section name, in display order. */
@@ -121,10 +125,12 @@ export function ResourceWatch({ groups, active, onSelect, shareUrl }: ResourceWa
   // always a bright white page, which can be harsh in low light. There's no
   // same-origin access into the iframe's own document to theme it properly,
   // so this applies a CSS filter to the iframe itself instead — the one lever
-  // available from outside. Kept as component state (not reset per file,
-  // since the iframe is keyed by active.id and remounts on every file
-  // change) so the preference sticks while browsing a section's files.
-  const [inverted, setInverted] = useState(false);
+  // available from outside. Persisted, because a reader who needs it needs it
+  // on every file and every visit, not just until the next reload.
+  const [inverted, toggleInverted] = usePersistedFlag(PDF_INVERT_STORAGE_KEY);
+  // The preview is a cross-origin Drive document that paints nothing at all
+  // until its own viewer bundle boots, so the frame reports its own first paint.
+  const frame = useFrameLoad(active.id);
 
   // Record one view per file load (not per render) — fires whenever the
   // active file's id changes, including the very first file shown. Also
@@ -217,13 +223,20 @@ export function ResourceWatch({ groups, active, onSelect, shareUrl }: ResourceWa
             title={active.name}
             loading="lazy"
             allow="autoplay"
+            onLoad={frame.handleLoad}
             className={inverted ? 'resource-pdf-inverted' : undefined}
+          />
+          <FrameStatus
+            loading={frame.isLoading}
+            slow={frame.isSlow}
+            openHref={openSrc}
+            openLabel={t('resources.watch.openInDrive')}
           />
           <div className="resource-pdf-toolbar">
             <button
               type="button"
               className={inverted ? 'doxx-sandbox-fullscreen is-active' : 'doxx-sandbox-fullscreen'}
-              onClick={() => setInverted(v => !v)}
+              onClick={toggleInverted}
               aria-pressed={inverted}
               aria-label={inverted ? t('resources.watch.darkModeOff') : t('resources.watch.darkModeOn')}
               title={inverted ? t('resources.watch.darkModeOff') : t('resources.watch.darkModeOn')}
