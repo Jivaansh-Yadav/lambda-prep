@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestIP } from "@tanstack/react-start/server";
 import { sql } from "./db";
+import { parseFileIdBatch } from "./file-id-batch";
 import { isKnownFileId } from "./resource-lookup-server";
 
 // ---------------------------------------------------------------------
@@ -143,10 +144,8 @@ export const getResourceRatingsIndex = createServerFn({ method: "POST" })
 export const getResourceRatingsBatch = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     const d = data as { fileIds?: unknown };
-    if (!Array.isArray(d?.fileIds) || !d.fileIds.every((f) => typeof f === "string")) {
-      throw new Error("Invalid fileIds");
-    }
-    return { fileIds: d.fileIds as string[] };
+    // Capped, de-duplicated and length-checked: see file-id-batch.ts.
+    return { fileIds: parseFileIdBatch(d?.fileIds) };
   })
   .handler(async ({ data }): Promise<Record<string, { average: number; count: number }>> => {
     if (!sql || data.fileIds.length === 0) return {};

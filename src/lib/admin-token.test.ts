@@ -42,9 +42,9 @@ describe("admin session tokens", () => {
 
   it("refuses a tampered signature", async () => {
     const token = await createAdminSessionToken(SECRET, NOW);
-    const parts = token.split(".");
-    const flipped = parts[2].slice(0, -1) + (parts[2].endsWith("A") ? "B" : "A");
-    expect(await verifyAdminSessionToken(`${parts[0]}.${parts[1]}.${flipped}`, SECRET, NOW)).toBe(false);
+    const [version, expiresRaw, signature] = token.split(".");
+    const flipped = signature!.slice(0, -1) + (signature!.endsWith("A") ? "B" : "A");
+    expect(await verifyAdminSessionToken(`${version}.${expiresRaw}.${flipped}`, SECRET, NOW)).toBe(false);
   });
 
   it("refuses malformed or missing cookies instead of throwing", async () => {
