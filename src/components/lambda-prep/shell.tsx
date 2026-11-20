@@ -1,5 +1,5 @@
-import { Link, useRouterState } from '@tanstack/react-router';
-import { Menu, X, Home, BookOpen, ChevronDown, FileStack, MonitorPlay, Sun, Moon, HeartHandshake, Mail, CheckCircle2, Loader2 } from 'lucide-react';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
+import { Menu, X, Home, BookOpen, ChevronDown, FileStack, MonitorPlay, Search, Sun, Moon, HeartHandshake, Mail, CheckCircle2, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,6 +44,90 @@ function ThemeToggle() {
     </button>
   );
 }
+/**
+ * Header search: a compact trigger plus the Ctrl/⌘+K shortcut, both opening
+ * the same dialog. Submitting hands the term to the resource library through
+ * `?q=` (and a same-route event, see resources.index.tsx) instead of building
+ * a second, parallel search UI in the header.
+ */
+function QuickSearch() {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const typing = target?.isContentEditable
+        || target?.tagName === 'INPUT'
+        || target?.tagName === 'TEXTAREA'
+        || target?.tagName === 'SELECT';
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setOpen(true);
+        return;
+      }
+      // Bare "/" is the usual quick-search key, but must not steal a slash
+      // the user is typing into a field or a contenteditable.
+      if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setOpen(true);
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const term = query.trim();
+    if (!term) return;
+    setOpen(false);
+    setQuery('');
+    if (pathname === '/resources') {
+      window.dispatchEvent(new CustomEvent('lambda-prep:quick-search', { detail: term }));
+    }
+    navigate({ to: '/resources', search: { q: term } });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="header-search"
+        aria-label={t('nav.searchTitle')}
+        title={t('nav.searchTitle')}
+        onClick={() => setOpen(true)}
+      >
+        <Search size={17} />
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="quick-search-dialog">
+          <DialogHeader>
+            <DialogTitle>{t('nav.search')}</DialogTitle>
+            <DialogDescription>{t('nav.searchHint')}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submit} className="quick-search-form">
+            <label className="search-field resource-search">
+              <Search size={18} />
+              <input
+                autoFocus
+                aria-label={t('nav.searchTitle')}
+                placeholder={t('nav.searchPlaceholder')}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <Button type="submit" disabled={!query.trim()}>Search</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export function Header() {
   const [open, setOpen] = useState(false);
   const navRef = useRef<HTMLDivElement>(null);
@@ -107,7 +191,7 @@ export function Header() {
     <Link to="/doxxmarks" search={{}} onClick={() => setOpen(false)} className="nav-link" activeProps={{ className: 'nav-link nav-active' }}><MonitorPlay size={16} />{t('nav.doxxmarks')}</Link>
     <Link to="/resources" onClick={() => setOpen(false)} className="nav-link" activeProps={{ className: 'nav-link nav-active' }}><FileStack size={16} />{t('nav.resources')}</Link>
     <ThemeToggle />
-  </nav><Button ref={menuButtonRef} variant="ghost" size="icon" className="mobile-menu" aria-label={open ? t('nav.close') : t('nav.open')} aria-expanded={open} aria-controls="primary-nav" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</Button></div></header>;
+  </nav><QuickSearch /><Button ref={menuButtonRef} variant="ghost" size="icon" className="mobile-menu" aria-label={open ? t('nav.close') : t('nav.open')} aria-expanded={open} aria-controls="primary-nav" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</Button></div></header>;
 }
 
 export function Footer() {

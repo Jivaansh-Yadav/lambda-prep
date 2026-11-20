@@ -27,6 +27,14 @@ import { CommunityLinks } from '@/components/lambda-prep/community-links';
 import { usePersistedFilters } from '@/lib/search-state';
 
 export const Route = createFileRoute('/resources/')({
+  // `?q=` is how the header quick search (and a shared link) hands a term to
+  // the library; the box keeps the URL in sync afterwards.
+  validateSearch: (search: Record<string, unknown>): { q?: string } => {
+    const q = typeof search['q'] === 'string' ? search['q'].trim() : '';
+    // An absent key, not `q: undefined` — with exactOptionalPropertyTypes the
+    // latter would force every <Link to="/resources"> to pass `search`.
+    return q ? { q } : {};
+  },
   head: () => pageHead('Resource library', 'Find your ICSE and ISC class and explore subject-wise learning resources.', '/resources'),
   component: Resources,
 });
@@ -95,6 +103,7 @@ function GlobalHitCard({
 /** Resource Library hub with unified global filename search across Community and Official CISCE files. */
 function Resources() {
   const { t } = useI18n();
+  const { q: urlQuery } = Route.useSearch();
   // Facets (and the query) are mirrored into sessionStorage so returning to
   // the library — Back from a file, a tab reload — lands on the same filtered
   // list instead of a blank search (GH #12).
@@ -152,15 +161,29 @@ function Resources() {
 
   // ?q= keeps a search shareable and — more importantly — survives the trip into
   // a file view, so pressing Back returns to the same result list instead of an
-  // empty library page.
+  // empty library page. It is also how the header quick search arrives here, so
+  // this has to react to a new value, not just the first render.
   const hydratedFromUrl = useRef(false);
   useEffect(() => {
-    if (hydratedFromUrl.current) return;
+    if (!urlQuery) return;
     hydratedFromUrl.current = true;
-    const initial = new URLSearchParams(window.location.search).get('q');
-    if (!initial) return;
-    setFilters(current => ({ ...current, query: initial }));
+    setFilters(current => (current.query === urlQuery ? current : { ...current, query: urlQuery }));
     setCorpusRequested(true);
+  }, [urlQuery]);
+
+  // Same-route quick search: navigating to /resources?q= when the library is
+  // already mounted can resolve to identical router state (searching the same
+  // term twice, say), so the header also fires this event.
+  useEffect(() => {
+    function onQuickSearch(event: Event) {
+      const term = (event as CustomEvent<string>).detail;
+      if (typeof term !== 'string' || !term.trim()) return;
+      hydratedFromUrl.current = true;
+      setFilters(current => ({ ...current, query: term }));
+      setCorpusRequested(true);
+    }
+    window.addEventListener('lambda-prep:quick-search', onQuickSearch);
+    return () => window.removeEventListener('lambda-prep:quick-search', onQuickSearch);
   }, []);
 
   // Restored filters arrive without any user interaction, so the corpus load

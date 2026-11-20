@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { ArrowLeft, ArrowUpRight, BookOpen, ChevronRight, PlayCircle, FileText, Search } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, BookOpen, ChevronRight, PlayCircle, FileText, MonitorPlay, Search } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import type { DoxxLesson } from '@/components/lambda-prep/doxx-watch';
 import { NotePdfWatch } from '@/components/lambda-prep/note-pdf-watch';
@@ -8,6 +8,7 @@ import { classes, findSubjectMeta, pageHead, getSiteOrigin, sortBySubjectOrder }
 import { DOXX_CATEGORIES, categoryForActivity, categoryMeta } from '@/lib/doxx-categories';
 import { useI18n } from '@/lib/i18n';
 import { useFuseSearch } from '@/hooks/use-fuse-search';
+import { DOXX_INDEX, DOXX_SEARCH_KEYS, DOXX_SEARCH_OPTIONS, type DoxxResultKind } from '@/lib/doxx-search';
 import { useGoBack } from '@/hooks/use-go-back';
 import { BackLink } from '@/components/lambda-prep/back-link';
 
@@ -18,6 +19,21 @@ const DoxxWatch = lazy(() => import('@/components/lambda-prep/doxx-watch').then(
 
 // Referentially stable key arrays for useFuseSearch — a fresh array literal
 // at the call site would rebuild the Fuse index on every render.
+const SEARCH_RESULT_LIMIT = 60;
+
+/** Icon + label per result type, so a video result and a chapter result are
+ * distinguishable at a glance in the flat result list. */
+const DOXX_KIND_META: Record<DoxxResultKind, { icon: typeof BookOpen; labelKey: string }> = {
+  class: { icon: BookOpen, labelKey: 'doxx.search.kind.class' },
+  subject: { icon: BookOpen, labelKey: 'doxx.search.kind.subject' },
+  chapter: { icon: FileText, labelKey: 'doxx.search.kind.chapter' },
+  topic: { icon: ChevronRight, labelKey: 'doxx.search.kind.topic' },
+  video: { icon: PlayCircle, labelKey: 'doxx.search.kind.video' },
+  interactive: { icon: MonitorPlay, labelKey: 'doxx.search.kind.interactive' },
+  activity: { icon: MonitorPlay, labelKey: 'doxx.search.kind.activity' },
+  note: { icon: FileText, labelKey: 'doxx.search.kind.note' },
+};
+
 const SUBJECT_SEARCH_KEYS = ['name'];
 const CHAPTER_ENTRY_SEARCH_KEYS = ['chapter.name'];
 
@@ -65,6 +81,10 @@ function Doxxmarks() {
   const plural = (n: number, one: string, many: string) => `${n} ${t(n === 1 ? one : many)}`;
   const [subjectQuery, setSubjectQuery] = useState('');
   const [chapterQuery, setChapterQuery] = useState('');
+  // One query that reaches every level at once — chapters, topics, videos,
+  // interactive classes and revision notes — instead of the per-level boxes
+  // below, which can only ever filter what is already on screen (GH #16).
+  const [globalQuery, setGlobalQuery] = useState('');
 
   // Every playable item in the topic, in the order the topic page's sections
   // and DoxxWatch's playlist read it. Classes and videos come first, in their
@@ -125,12 +145,83 @@ function Doxxmarks() {
   const filteredSubjects = useFuseSearch(orderedSubjects, SUBJECT_SEARCH_KEYS, subjectQuery);
   const filteredChapterEntries = useFuseSearch(chapterEntries, CHAPTER_ENTRY_SEARCH_KEYS, chapterQuery);
 
+  const globalResults = useFuseSearch(DOXX_INDEX, DOXX_SEARCH_KEYS, globalQuery, 120, DOXX_SEARCH_OPTIONS);
+  const searchActive = globalQuery.trim().length > 0;
+  const visibleResults = globalResults.slice(0, SEARCH_RESULT_LIMIT);
+
+  const globalSearchField = (
+    <div className="doxx-search-bar">
+      <label className="search-field resource-search">
+        <Search size={18} />
+        <input
+          aria-label={t('doxx.searchEverything.label')}
+          placeholder={t('doxx.searchEverything.placeholder')}
+          value={globalQuery}
+          onChange={e => setGlobalQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') setGlobalQuery(''); }}
+        />
+      </label>
+    </div>
+  );
+
   const backSearch = (() => {
     if (topic) return { class: classSlug, subject: subjectName, chapter: chapterIdx };
     if (chapter) return { class: classSlug, subject: subjectName };
     if (subject) return { class: classSlug };
     return {};
   })();
+
+  // Searching is its own view: the drill-down below would otherwise show a
+  // class page while the results belong to every class at once.
+  if (searchActive) {
+    return (
+      <main className="container content-page">
+        <h1>{t('doxx.searchEverything.title')}<span className="text-primary">.</span></h1>
+        <p className="page-intro">{t('doxx.searchEverything.intro')}</p>
+        {globalSearchField}
+        {visibleResults.length ? (
+          <>
+            <p className="doxx-search-count" role="status">
+              {globalResults.length} {t(globalResults.length === 1 ? 'doxx.searchEverything.result' : 'doxx.searchEverything.results')}
+            </p>
+            <div className="doxx-list doxx-search-results">
+              {visibleResults.map(entry => {
+                const meta = DOXX_KIND_META[entry.kind];
+                const Icon = meta.icon;
+                return (
+                  <Link
+                    key={entry.id}
+                    to="/doxxmarks"
+                    search={entry.target}
+                    className="doxx-row"
+                    // Leaving the query in place would keep this results view
+                    // mounted after the link navigates, hiding the lesson it
+                    // just opened.
+                    onClick={() => setGlobalQuery('')}
+                  >
+                    <span className="doxx-row-title">
+                      {entry.title}
+                      <span className="doxx-row-context">{entry.context}</span>
+                    </span>
+                    <span className="doxx-row-meta"><Icon size={14} /> {t(meta.labelKey)}</span>
+                  </Link>
+                );
+              })}
+            </div>
+            {globalResults.length > visibleResults.length && (
+              <p className="doxx-search-count">{t('doxx.searchEverything.refine')}</p>
+            )}
+          </>
+        ) : (
+          <div className="empty-state">
+            <Search />
+            <h3>{t('doxx.searchEverything.empty.title')}</h3>
+            <p>{t('doxx.searchEverything.empty.text')}</p>
+          </div>
+        )}
+      </main>
+    );
+  }
 
   return (
     <main className="container content-page">
@@ -150,6 +241,8 @@ function Doxxmarks() {
         </>}
         {topic && <><ChevronRight size={14} /><span className="crumb-current">{topic.name}</span></>}
       </nav>
+
+      {globalSearchField}
 
       {(subject || chapter || topic) && (
         playing ? (

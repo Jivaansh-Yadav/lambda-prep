@@ -1,6 +1,9 @@
 import Fuse, { type IFuseOptions } from 'fuse.js';
 import { useEffect, useMemo, useState } from 'react';
 
+/** Fuse accepts a bare field name or a weighted `{ name, weight }` entry. */
+export type FuseKey = string | { name: string; weight?: number };
+
 const DEFAULT_OPTIONS: IFuseOptions<unknown> = {
   threshold: 0.35,
   ignoreLocation: true,
@@ -47,13 +50,18 @@ function useDebouncedValue<T>(value: T, delay: number): T {
  */
 export function useFuseSearch<T>(
   items: readonly T[],
-  keys: readonly string[],
+  keys: readonly FuseKey[],
   query: string,
-  debounceMs: number = DEFAULT_DEBOUNCE_MS
+  debounceMs: number = DEFAULT_DEBOUNCE_MS,
+  // Per-corpus overrides. A single subject's file list wants the loose default
+  // so typos still match; an index of thousands of rows needs a tighter
+  // threshold or every long context string fuzzy-matches everything.
+  options?: IFuseOptions<T>
 ): T[] {
   const fuse = useMemo(
-    () => new Fuse(items as T[], { ...DEFAULT_OPTIONS, keys: keys as string[] }),
-    [items, keys]
+    () => new Fuse(items as T[], { ...DEFAULT_OPTIONS, ...options, keys: keys as string[] }),
+    // `options` is a module-level constant at every call site.
+    [items, keys, options]
   );
 
   const trimmed = query.trim();
