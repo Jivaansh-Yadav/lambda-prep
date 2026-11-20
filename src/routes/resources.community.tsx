@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { pageHead } from '@/lib/lambda-prep';
 import { useI18n } from '@/lib/i18n';
 import { SourceClassPicker } from '@/components/lambda-prep/source-class-picker';
+import { CommunityLinks } from '@/components/lambda-prep/community-links';
 
 interface ResourcesSearch { class?: string | undefined; subject?: string | undefined; file?: string | undefined; stream?: string | undefined }
 
@@ -52,7 +53,7 @@ function CommunityResources() {
       }
       desc={
         <>
-          {t('resources.community.descPrefix')} <a href="https://www.reddit.com/r/ICSE" target="_blank" rel="noreferrer">r/ICSE</a> and <a href="https://www.reddit.com/r/ISCNERDS/" target="_blank" rel="noreferrer">r/ISCNERDS</a> {t('resources.community.descMid')} <a href="https://discord.gg/7daJugjUA3" target="_blank" rel="noreferrer">ICSEcord</a> and <a href="https://discord.gg/7daJugjUA3" target="_blank" rel="noreferrer">ISCcord</a> {t('resources.community.descSuffix')}
+          <CommunityLinks />
         </>
       }
     />

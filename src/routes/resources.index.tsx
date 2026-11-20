@@ -23,6 +23,7 @@ import { AdvancedSearchBar, HighlightedFilename } from '@/components/lambda-prep
 import { VirtualFileGrid } from '@/components/lambda-prep/virtual-file-grid';
 import { FileRatingBadge } from '@/components/lambda-prep/file-rating-badge';
 import { Button } from '@/components/ui/button';
+import { CommunityLinks } from '@/components/lambda-prep/community-links';
 
 export const Route = createFileRoute('/resources/')({
   head: () => pageHead('Resource library', 'Find your ICSE and ISC class and explore subject-wise learning resources.', '/resources'),
@@ -262,7 +263,7 @@ function Resources() {
             <Link to="/resources/community" className="source-card-link" aria-label={t('resources.community.title')} />
             <span className="subject-icon"><UsersRound /></span>
             <h3>{t('resources.community.title')}</h3>
-            <p>{t('resources.community.descPrefix')} <a href="https://www.reddit.com/r/ICSE" target="_blank" rel="noreferrer">r/ICSE</a> and <a href="https://www.reddit.com/r/ISCNERDS/" target="_blank" rel="noreferrer">r/ISCNERDS</a> {t('resources.community.descMid')} <a href="https://discord.gg/7daJugjUA3" target="_blank" rel="noreferrer">ICSEcord</a> and <a href="https://discord.gg/7daJugjUA3" target="_blank" rel="noreferrer">ISCcord</a> {t('resources.community.descSuffix')}</p>
+            <p><CommunityLinks /></p>
             <div className="card-bottom">{t('resources.explore')} <ArrowUpRight size={18} /></div>
           </div>
           <div className="source-card tone-blue">

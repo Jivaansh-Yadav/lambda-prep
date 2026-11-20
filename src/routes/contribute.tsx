@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { classes, getSubjects, pageHead } from '@/lib/lambda-prep';
 import { submitContributionLink, submitContributionUpload } from '@/lib/contribute-server';
 import { UPLOAD_ACCEPT, allowedExtensionList, resolveUploadType } from '@/lib/upload-policy';
+import { COMMUNITY_DISCORD_LABEL, communityLinks } from '@/lib/lambda-prep';
 
 export const Route = createFileRoute('/contribute')({
   head: () =>
@@ -409,20 +410,16 @@ function ContributePage() {
         <div className="contribute-submit-row">
           <p className="contribute-submit-note">
             Want to contribute without any of this? Post directly on{' '}
-            <a href="https://www.reddit.com/r/ICSE" target="_blank" rel="noreferrer">
+            <a href={communityLinks.redditIcse} target="_blank" rel="noreferrer">
               r/ICSE
             </a>{' '}
             and{' '}
-            <a href="https://www.reddit.com/r/ISCNERDS/" target="_blank" rel="noreferrer">
+            <a href={communityLinks.redditIscnerds} target="_blank" rel="noreferrer">
               r/ISCNERDS
             </a>{' '}
             or{' '}
-            <a href="https://discord.gg/7daJugjUA3" target="_blank" rel="noreferrer">
-              ICSEcord
-            </a>{' '}
-            and{' '}
-            <a href="https://discord.gg/7daJugjUA3" target="_blank" rel="noreferrer">
-              ISCcord <ExternalLink size={12} />
+            <a href={communityLinks.discord} target="_blank" rel="noreferrer">
+              {COMMUNITY_DISCORD_LABEL} <ExternalLink size={12} />
             </a>
             .
           </p>
