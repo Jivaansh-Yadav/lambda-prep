@@ -3,7 +3,6 @@ import { useRef, useState, type DragEvent } from 'react';
 import {
   CheckCircle2,
   CloudUpload,
-  ExternalLink,
   FileText,
   Link2,
   Loader2,
@@ -19,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { classes, getSubjects, pageHead } from '@/lib/lambda-prep';
 import { submitContributionLink, submitContributionUpload } from '@/lib/contribute-server';
 import { UPLOAD_ACCEPT, allowedExtensionList, resolveUploadType } from '@/lib/upload-policy';
-import { COMMUNITY_DISCORD_LABEL, communityLinks } from '@/lib/lambda-prep';
+import { DISCORD_ICSE_LABEL, DISCORD_ISC_LABEL, communityLinks } from '@/lib/lambda-prep';
 
 export const Route = createFileRoute('/contribute')({
   head: () =>
@@ -422,11 +421,15 @@ function ContributePage() {
             <a href={communityLinks.redditIscnerds} target="_blank" rel="noreferrer">
               r/ISCNERDS
             </a>{' '}
-            or{' '}
-            <a href={communityLinks.discord} target="_blank" rel="noreferrer">
-              {COMMUNITY_DISCORD_LABEL} <ExternalLink size={12} />
-            </a>
-            .
+            or the{' '}
+            <a href={communityLinks.discordIcse} target="_blank" rel="noreferrer">
+              {DISCORD_ICSE_LABEL}
+            </a>{' '}
+            and{' '}
+            <a href={communityLinks.discordIsc} target="_blank" rel="noreferrer">
+              {DISCORD_ISC_LABEL}
+            </a>{' '}
+            Discord servers.
           </p>
           <Button type="submit" size="lg" disabled={!canSubmit}>
             {submitState === 'submitting' ? (

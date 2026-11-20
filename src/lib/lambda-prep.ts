@@ -83,19 +83,22 @@ export function subjectMatchesStream(name: string, stream: string) {
  * The three call sites that mention the communities previously hard-coded
  * their own copies, and both Discord labels ended up pointing at the same
  * invite (GH #8) — a reader could not tell whether "ICSEcord" and "ISCcord"
- * were one server or two. They are one server: the ICSE-side and ISC-side
- * channels of the same join URL, so the UI links it once. If a separate ISC
- * server appears, add `discordIsc` here and split the label in
- * `community-links.tsx`; no route needs to change.
+ * were one server or two. They are two: ICSEcord is the server linked from the
+ * icse-resources footer, ISCcord from r/ISCNERDS. Keep the two invites
+ * separate — one link cannot honestly carry two labels.
  */
 export const communityLinks = {
   redditIcse: 'https://www.reddit.com/r/ICSE/',
   redditIscnerds: 'https://www.reddit.com/r/ISCNERDS/',
-  discord: 'https://discord.gg/7daJugjUA3',
+  /** ICSEcord — linked from the icse-resources repo footer. */
+  discordIcse: 'https://discord.gg/xGD8SnvuKX',
+  /** ISCcord — linked from r/ISCNERDS ("Discord Server for ISC Students"). */
+  discordIsc: 'https://discord.gg/qx2crFysjU',
 } as const;
 
-/** Link text for `communityLinks.discord` — one server, both names. */
-export const COMMUNITY_DISCORD_LABEL = 'ICSEcord & ISCcord';
+/** Display names for the two community Discord servers. */
+export const DISCORD_ICSE_LABEL = 'ICSEcord';
+export const DISCORD_ISC_LABEL = 'ISCcord';
 
 export const SITE_URL = 'https://lambda-prep.pages.dev';
 export const OG_IMAGE = `${SITE_URL}/og/lambda-prep-og.png`;

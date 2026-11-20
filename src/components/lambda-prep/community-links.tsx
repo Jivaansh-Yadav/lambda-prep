@@ -1,4 +1,4 @@
-import { COMMUNITY_DISCORD_LABEL, communityLinks } from '@/lib/lambda-prep';
+import { DISCORD_ICSE_LABEL, DISCORD_ISC_LABEL, communityLinks } from '@/lib/lambda-prep';
 import { useI18n } from '@/lib/i18n';
 
 /**
@@ -27,8 +27,12 @@ export function CommunityLinks({ variant = 'desc' }: { variant?: 'desc' | 'discl
         r/ISCNERDS
       </a>{' '}
       {t(`${key}Mid`)}{' '}
-      <a href={communityLinks.discord} {...linkProps}>
-        {COMMUNITY_DISCORD_LABEL}
+      <a href={communityLinks.discordIcse} {...linkProps}>
+        {DISCORD_ICSE_LABEL}
+      </a>{' '}
+      and{' '}
+      <a href={communityLinks.discordIsc} {...linkProps}>
+        {DISCORD_ISC_LABEL}
       </a>{' '}
       {t(`${key}Suffix`)}
     </>
