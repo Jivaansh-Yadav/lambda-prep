@@ -163,6 +163,7 @@ export function AdvancedSearchBar({
   const [recentsPinned, setRecentsPinned] = useState(false);
   const [highlightedIdx, setHighlightedIdx] = useState(-1);
   const shellRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const pendingScrollRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -278,6 +279,14 @@ export function AdvancedSearchBar({
 
   const resetAll = () => {
     onChange(createDefaultFilters());
+  };
+
+  // Closing the sheet with the backdrop or the footer button would otherwise
+  // drop focus to <body>, sending keyboard users back to the top of the page.
+  const closePanel = () => {
+    setPanelOpen(false);
+    if (!narrow || typeof window === 'undefined') return;
+    window.requestAnimationFrame(() => toggleRef.current?.focus({ preventScroll: true }));
   };
 
   const togglePanel = () => {
@@ -531,6 +540,7 @@ export function AdvancedSearchBar({
         <div className="adv-search-controls">
           <button
             type="button"
+            ref={toggleRef}
             className={`adv-filter-toggle${panelOpen || structuredFilterCount > 0 ? ' is-active' : ''}`}
             aria-expanded={panelOpen}
             onClick={togglePanel}
@@ -604,7 +614,7 @@ export function AdvancedSearchBar({
       {panelOpen && (
         <>
         {narrow && (
-          <div className="adv-sheet-backdrop" onClick={() => setPanelOpen(false)} aria-hidden="true" />
+          <div className="adv-sheet-backdrop" onClick={closePanel} aria-hidden="true" />
         )}
         <section
           className={`adv-filter-panel${narrow ? ' is-sheet' : ''}`}
@@ -619,7 +629,7 @@ export function AdvancedSearchBar({
                 type="button"
                 className="adv-sheet-close"
                 aria-label="Close filters"
-                onClick={() => setPanelOpen(false)}
+                onClick={closePanel}
               >
                 <X size={16} aria-hidden="true" />
               </button>
@@ -871,7 +881,7 @@ export function AdvancedSearchBar({
                 <RotateCcw size={13} aria-hidden="true" />
                 <span>Reset</span>
               </button>
-              <button type="button" className="adv-sheet-apply" onClick={() => setPanelOpen(false)}>
+              <button type="button" className="adv-sheet-apply" onClick={closePanel}>
                 {loading && totalCount === 0
                   ? 'Searching…'
                   : `Show ${matchCount.toLocaleString()} ${matchCount === 1 ? 'file' : 'files'}`}
