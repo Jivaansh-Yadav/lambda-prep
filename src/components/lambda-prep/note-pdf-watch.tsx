@@ -39,7 +39,7 @@ export function NotePdfWatch({ notes, active, onSelect, shareUrl }: NotePdfWatch
             <button type="button" className="doxx-sandbox-fullscreen" onClick={toggleFullscreen} aria-label={isFullscreen ? t('resources.watch.exitFullscreen') : t('resources.watch.fullscreen')} title={isFullscreen ? t('resources.watch.exitFullscreen') : t('resources.watch.fullscreen')}>
               {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
             </button>
-            <a className="doxx-sandbox-fullscreen" href={active.link} target="_blank" rel="noreferrer" aria-label={t('resources.watch.openInDrive')} title={t('resources.watch.openInDrive')}>
+            <a className="doxx-sandbox-fullscreen" href={active.link} target="_blank" rel="noreferrer" aria-label={t('resources.watch.openPdf')} title={t('resources.watch.openPdf')}>
               <ExternalLink size={16} />
             </a>
             <ShareWidget compact url={shareUrl} title={active.name} />

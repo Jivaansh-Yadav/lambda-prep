@@ -109,6 +109,9 @@ const en: Dict = {
   'resources.watch.fullscreen': 'Enter fullscreen',
   'resources.watch.exitFullscreen': 'Exit fullscreen',
   'resources.watch.openInDrive': 'Open in Google Drive',
+  // Revision notes are plain GCS PDF URLs, not Drive files — saying "Google
+  // Drive" there sent readers looking for a Drive UI that never appeared.
+  'resources.watch.openPdf': 'Open PDF in new tab',
   'resources.watch.download': 'Download',
   'resources.watch.darkModeOn': 'Switch to dark reading mode',
   'resources.watch.darkModeOff': 'Switch to normal reading mode',
