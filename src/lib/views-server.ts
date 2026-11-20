@@ -1,5 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "./db";
+import { resolveFileMetadata } from "./resource-lookup-server";
+import { RateLimiter } from "./rate-limit";
+import { rateLimitKey } from "./client-ip";
 
 // ---------------------------------------------------------------------
 // Resource file views: a lean aggregate counter per file (table:
@@ -13,6 +16,18 @@ import { sql } from "./db";
 
 export type ResourceViewSummary = { count: number };
 
+/** Current lifetime count for one file (0 when unknown or unconfigured). */
+async function readViewCount(fileId: string): Promise<number> {
+  if (!sql) return 0;
+  try {
+    const rows = await sql.query(`SELECT view_count FROM resource_views WHERE file_id = $1`, [fileId]);
+    const row = rows[0] as { view_count: number } | undefined;
+    return row?.view_count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** Calendar timezone for the "today" buckets behind the Trending section.
  * The audience is ICSE/ISC students in India, so a day has to roll over at
  * midnight IST rather than midnight UTC — a file watched at 1 AM IST would
@@ -20,6 +35,15 @@ export type ResourceViewSummary = { count: number };
  * (`now() AT TIME ZONE 'Asia/Kolkata'`), so the writes and the reads below can
  * never disagree about which day it is, no matter which instance served them. */
 const TRENDING_TIMEZONE = "Asia/Kolkata";
+
+// View writes are anonymous and public, so they need a brake: one IP could
+// otherwise inflate a file's counters (and its Trending rank) in a loop.
+// Two buckets — per IP+file, and per IP across all files — because the first
+// alone still lets one client walk the whole catalogue.
+const VIEW_WINDOW_MS = 10 * 60 * 1000;
+const MAX_VIEWS_PER_FILE = 30;
+const MAX_VIEWS_PER_IP = 150;
+const viewLimiter = new RateLimiter();
 
 export type TrendingFile = {
   fileId: string;
@@ -34,22 +58,36 @@ export type TrendingFile = {
  * throws) so a DB hiccup never blocks the viewer from seeing the file. */
 export const recordResourceView = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { fileId?: unknown; classSlug?: unknown; subject?: unknown; source?: unknown; name?: unknown };
-    if (typeof d?.fileId !== "string" || !d.fileId) throw new Error("Missing fileId");
-    // Optional provenance for the Trending section: the viewer knows which
-    // class/subject it is showing, so it can hand that context over. Values
-    // are length-capped here because they end up rendered on a public page.
-    const text = (value: unknown, max: number) => (typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null);
-    return {
-      fileId: d.fileId,
-      classSlug: text(d.classSlug, 40),
-      subject: text(d.subject, 80),
-      source: d.source === "cisce" || d.source === "community" ? d.source : null,
-      name: text(d.name, 200),
-    };
+    const d = data as { fileId?: unknown };
+    if (typeof d?.fileId !== "string" || !d.fileId.trim()) throw new Error("Missing fileId");
+    const fileId = d.fileId.trim();
+    // Drive ids are 28-44 characters; anything wildly longer is not an id and
+    // would only bloat the row. Provenance (class, subject, name) is *not*
+    // accepted from the caller any more — it is resolved server-side from the
+    // catalogue below, because those columns are rendered publicly (GH #1).
+    if (fileId.length > 128) throw new Error("Invalid fileId");
+    return { fileId };
   })
   .handler(async ({ data }): Promise<ResourceViewSummary> => {
     if (!sql) return { count: 0 };
+
+    const metadata = await resolveFileMetadata(data.fileId);
+    if (!metadata) return { count: 0 };
+
+    const perFile = viewLimiter.hit(rateLimitKey("view", data.fileId), {
+      max: MAX_VIEWS_PER_FILE,
+      windowMs: VIEW_WINDOW_MS,
+    });
+    const perIp = viewLimiter.hit(rateLimitKey("view-ip"), {
+      max: MAX_VIEWS_PER_IP,
+      windowMs: VIEW_WINDOW_MS,
+    });
+    if (perFile.limited || perIp.limited) {
+      // Over the limit: don't write, but still answer with the stored count so
+      // a real viewer who simply reloaded does not see the badge drop to 0.
+      return { count: await readViewCount(data.fileId) };
+    }
+
     try {
       const rows = await sql.query(
         `INSERT INTO resource_views (file_id, view_count, last_viewed_at)
@@ -75,7 +113,7 @@ export const recordResourceView = createServerFn({ method: "POST" })
            subject = COALESCE(EXCLUDED.subject, resource_daily_views.subject),
            source = COALESCE(EXCLUDED.source, resource_daily_views.source),
            file_name = COALESCE(EXCLUDED.file_name, resource_daily_views.file_name)`,
-        [data.fileId, TRENDING_TIMEZONE, data.classSlug, data.subject, data.source, data.name]
+        [data.fileId, TRENDING_TIMEZONE, metadata.classSlug, metadata.subject, metadata.source, metadata.name]
       ).catch((error: unknown) => {
         // Trending is a nice-to-have; never let it break the view counter.
         console.error("[resource-views] failed to record daily view", error);

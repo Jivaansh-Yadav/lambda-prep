@@ -1,5 +1,4 @@
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
-import { getRequestIP } from "@tanstack/react-start/server";
 import { sql } from "./db";
 import {
   ADMIN_DEFAULT_RANGE,
@@ -36,6 +35,9 @@ import { getCloudflareIntegrationConfig } from "./cloudflare-integration-server"
 import { SITE_URL } from "./lambda-prep";
 import { resolveFileLocations } from "./resource-lookup-server";
 import { chunkWindows } from "./rum-windows";
+import { BoundedStore } from "./rate-limit";
+import { constantTimeEquals } from "./secure-compare";
+import { clientIp } from "./client-ip";
 
 // No fallback default: an unset ADMIN_PASSCODE must disable admin access
 // entirely rather than silently accepting a hardcoded, publicly-visible
@@ -63,19 +65,28 @@ const BASE_LOCKOUT_MS = 30 * 1000; // first lockout: 30s
 const MAX_LOCKOUT_MS = 15 * 60 * 1000; // cap at 15 minutes
 
 type AttemptRecord = { count: number; firstFailureAt: number; lockUntil: number; lockLevel: number };
-const attemptsByIp = new Map<string, AttemptRecord>();
+// Bounded: one record per IP that has ever failed a passcode, evicting the
+// oldest at the cap and dropping records whose lockout and failure window
+// have both elapsed (`pruneAttempts`). An unbounded Map here grew by one
+// row per spoofed `X-Forwarded-For` value.
+const attemptsByIp = new BoundedStore<string, AttemptRecord>(10_000);
+const ATTEMPT_SWEEP_MS = 60_000;
+let lastAttemptSweep = 0;
+
+function pruneAttempts(now: number): void {
+  if (now - lastAttemptSweep < ATTEMPT_SWEEP_MS) return;
+  lastAttemptSweep = now;
+  attemptsByIp.prune(
+    (record) => record.lockUntil <= now && now - record.firstFailureAt > WINDOW_MS
+  );
+}
 
 function getClientIp(): string {
-  try {
-    // Trusts X-Forwarded-For because this app only ever runs behind
-    // Cloudflare/Vercel, both of which set it reliably.
-    return getRequestIP({ xForwardedFor: true }) ?? "unknown";
-  } catch {
-    return "unknown";
-  }
+  return clientIp();
 }
 
 function isLockedOut(ip: string): { locked: boolean; retryAfterMs: number } {
+  pruneAttempts(Date.now());
   const rec = attemptsByIp.get(ip);
   if (!rec) return { locked: false, retryAfterMs: 0 };
   const remaining = rec.lockUntil - Date.now();
@@ -119,7 +130,9 @@ function verifyPasscode(passcode: string): { ok: boolean; lockedOutMs?: number }
   if (!ADMIN_PASSCODE) {
     return { ok: false };
   }
-  if (passcode === ADMIN_PASSCODE) {
+  // Constant-time: `===` short-circuits on the first differing byte, which
+  // leaks how much of a guess was correct to anyone who can time the request.
+  if (constantTimeEquals(passcode, ADMIN_PASSCODE)) {
     recordSuccess(ip);
     return { ok: true };
   }

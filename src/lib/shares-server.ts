@@ -1,5 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "./db";
+import { isKnownFileId } from "./resource-lookup-server";
+import { RateLimiter } from "./rate-limit";
+import { rateLimitKey } from "./client-ip";
 
 // ---------------------------------------------------------------------
 // Resource file shares: a lean aggregate counter per file (table:
@@ -12,17 +15,47 @@ import { sql } from "./db";
 
 export type ResourceShareSummary = { count: number };
 
+// A share is a user action, not a page view: a handful per file per window is
+// generous, and the per-IP cap stops one client from walking the catalogue.
+const SHARE_WINDOW_MS = 10 * 60 * 1000;
+const MAX_SHARES_PER_FILE = 20;
+const MAX_SHARES_PER_IP = 100;
+const shareLimiter = new RateLimiter();
+
 /** Increments the share counter for a file and returns the new count.
  * Always resolves (never throws) so a DB hiccup never blocks the actual
  * share action the viewer just performed. */
 export const recordResourceShare = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     const d = data as { fileId?: unknown };
-    if (typeof d?.fileId !== "string" || !d.fileId) throw new Error("Missing fileId");
-    return { fileId: d.fileId };
+    if (typeof d?.fileId !== "string" || !d.fileId.trim()) throw new Error("Missing fileId");
+    const fileId = d.fileId.trim();
+    if (fileId.length > 128) throw new Error("Invalid fileId");
+    return { fileId };
   })
   .handler(async ({ data }): Promise<ResourceShareSummary> => {
     if (!sql) return { count: 0 };
+
+    // A share for a file nobody can open is either a bug or an attempt to
+    // inflate a counter (GH issue #1).
+    if (!(await isKnownFileId(data.fileId))) return { count: 0 };
+
+    const perFile = shareLimiter.hit(rateLimitKey("share", data.fileId), {
+      max: MAX_SHARES_PER_FILE,
+      windowMs: SHARE_WINDOW_MS,
+    });
+    const perIp = shareLimiter.hit(rateLimitKey("share-ip"), {
+      max: MAX_SHARES_PER_IP,
+      windowMs: SHARE_WINDOW_MS,
+    });
+    if (perFile.limited || perIp.limited) {
+      const rows = await sql
+        .query(`SELECT share_count FROM resource_shares WHERE file_id = $1`, [data.fileId])
+        .catch(() => []);
+      const row = (rows as Array<{ share_count: number }>)[0];
+      return { count: row?.share_count ?? 0 };
+    }
+
     try {
       const rows = await sql.query(
         `INSERT INTO resource_shares (file_id, share_count, last_shared_at)

@@ -26,7 +26,17 @@ import {
 } from "./resources-data";
 import { curriculumClasses } from "./curriculum";
 
-export type FileLocation = { name: string; classLabel: string };
+export type FileLocation = {
+  name: string;
+  classLabel: string;
+  /** Slug of the class the file was indexed under ("icse-10"). Null for a
+   * Doxxmarks note, whose class is resolved from the curriculum instead. */
+  classSlug: string | null;
+  /** Display name of the subject, or null when the folder carries none. */
+  subject: string | null;
+  /** Which collection the file came from; null for Doxxmarks notes. */
+  source: "cisce" | "community" | null;
+};
 
 let indexPromise: Promise<Map<string, FileLocation>> | null = null;
 
@@ -54,14 +64,17 @@ async function buildIndex(): Promise<Map<string, FileLocation>> {
       for (const { subject } of manifest.subjects) {
         const entry = await loadResourceSubject(source, cls.slug, subject);
         if (!entry) continue;
-        for (const item of entry.items) index.set(item.id, { name: item.name, classLabel: label });
+        const location = { classLabel: label, classSlug: cls.slug, subject, source };
+        for (const item of entry.items) index.set(item.id, { name: item.name, ...location });
         for (const folder of entry.editorFolders ?? []) {
-          for (const item of flattenFolderFiles(folder)) index.set(item.id, { name: item.name, classLabel: label });
+          for (const item of flattenFolderFiles(folder)) index.set(item.id, { name: item.name, ...location });
         }
       }
       if (manifest.miscCount > 0) {
         const misc = await loadResourceMisc(source, cls.slug);
-        for (const item of misc) index.set(item.id, { name: item.name, classLabel: label });
+        for (const item of misc) {
+          index.set(item.id, { name: item.name, classLabel: label, classSlug: cls.slug, subject: null, source });
+        }
       }
     }
   }
@@ -79,7 +92,13 @@ async function buildIndex(): Promise<Map<string, FileLocation>> {
         for (const note of chapter.revisionNotes ?? []) {
           const id = driveIdFromLink(note.link);
           if (!id) continue;
-          index.set(id, { name: `${chapter.name} — ${subject.name}`, classLabel: label });
+          index.set(id, {
+            name: `${chapter.name} — ${subject.name}`,
+            classLabel: label,
+            classSlug: classMeta?.slug ?? null,
+            subject: subject.name,
+            source: null,
+          });
         }
       }
     }
@@ -102,7 +121,24 @@ function getIndex(): Promise<Map<string, FileLocation>> {
  * should always render something, even for an orphaned id. */
 export async function resolveFileLocation(fileId: string): Promise<FileLocation> {
   const index = await getIndex();
-  return index.get(fileId) ?? { name: "Unknown file", classLabel: "Unknown class" };
+  return (
+    index.get(fileId) ?? {
+      name: "Unknown file",
+      classLabel: "Unknown class",
+      classSlug: null,
+      subject: null,
+      source: null,
+    }
+  );
+}
+
+/** Canonical provenance for a file id, or null when the id is not in any
+ * indexed dataset. Write endpoints use this instead of trusting the
+ * client's class/subject/name — those columns are rendered publicly in the
+ * Trending list, so they must come from the catalogue (GH issue #1). */
+export async function resolveFileMetadata(fileId: string): Promise<FileLocation | null> {
+  const index = await getIndex();
+  return index.get(fileId) ?? null;
 }
 
 /** Batch form of resolveFileLocation — builds the index once and resolves
@@ -111,7 +147,16 @@ export async function resolveFileLocations(fileIds: readonly string[]): Promise<
   const index = await getIndex();
   const out = new Map<string, FileLocation>();
   for (const id of fileIds) {
-    out.set(id, index.get(id) ?? { name: "Unknown file", classLabel: "Unknown class" });
+    out.set(
+      id,
+      index.get(id) ?? {
+        name: "Unknown file",
+        classLabel: "Unknown class",
+        classSlug: null,
+        subject: null,
+        source: null,
+      }
+    );
   }
   return out;
 }

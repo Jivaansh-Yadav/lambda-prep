@@ -742,7 +742,6 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
           active={activeFile}
           onSelect={item => openFile(item, { replace: true })}
           shareUrl={`${getSiteOrigin()}${sourcePath}?class=${encodeURIComponent(classSlug ?? '')}&subject=${encodeURIComponent(subject ?? '')}&file=${encodeURIComponent(activeFile.id)}`}
-          viewContext={{ classSlug, subject, source }}
         />
         {source === 'community' && disclaimer}
       </main>;

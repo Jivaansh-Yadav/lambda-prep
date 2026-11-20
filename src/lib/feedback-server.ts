@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestIP } from "@tanstack/react-start/server";
 import { sql } from "./db";
+import { isKnownFileId } from "./resource-lookup-server";
+import { RateLimiter, formatRetryAfter } from "./rate-limit";
+import { clientIp, rateLimitKey } from "./client-ip";
 
 // ---------------------------------------------------------------------
 // Resource file feedback: a free-text companion to the 1-5 star rating
@@ -24,26 +26,7 @@ const MAX_FEEDBACK_LENGTH = 2000;
 // casual spam, not a hard security boundary.
 const MAX_SUBMISSIONS = 5;
 const WINDOW_MS = 10 * 60 * 1000; // 10 minutes
-const submissionsByIp = new Map<string, { count: number; windowStart: number }>();
-
-function getClientIp(): string {
-  try {
-    return getRequestIP({ xForwardedFor: true }) ?? "unknown";
-  } catch {
-    return "unknown";
-  }
-}
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const rec = submissionsByIp.get(ip);
-  if (!rec || now - rec.windowStart > WINDOW_MS) {
-    submissionsByIp.set(ip, { count: 1, windowStart: now });
-    return false;
-  }
-  rec.count += 1;
-  return rec.count > MAX_SUBMISSIONS;
-}
+const feedbackLimiter = new RateLimiter();
 
 export type SubmitResourceFeedbackResult = { ok: true } | { ok: false; reason: string };
 
@@ -66,8 +49,22 @@ export const submitResourceFeedback = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<SubmitResourceFeedbackResult> => {
     if (!sql) return { ok: false, reason: "Feedback storage isn't configured." };
 
-    if (isRateLimited(getClientIp())) {
-      return { ok: false, reason: "Too many submissions — please try again later." };
+    const limit = feedbackLimiter.hit(rateLimitKey("feedback"), {
+      max: MAX_SUBMISSIONS,
+      windowMs: WINDOW_MS,
+    });
+    if (limit.limited) {
+      return {
+        ok: false,
+        reason: `Too many submissions — please try again in ${formatRetryAfter(limit.retryAfterMs)}.`,
+      };
+    }
+
+    // Only files that exist in the crawled catalogue can collect feedback:
+    // arbitrary ids create rows no admin can ever resolve, and each one is a
+    // free write into the table (GH issue #1).
+    if (!(await isKnownFileId(data.fileId))) {
+      return { ok: false, reason: "That file isn't part of the library." };
     }
 
     try {
