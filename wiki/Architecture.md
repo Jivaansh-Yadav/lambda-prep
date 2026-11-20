@@ -54,7 +54,7 @@ File-based, one file per route, `src/routes/__root.tsx` is the only root layout.
 | --- | --- | --- |
 | `index.tsx` | `/` | Landing: class cards, Editor's Choice, counts |
 | `classes.$classId.tsx` | `/classes/:classId` | Slug is `icse-9`, `icse-10`, `isc-11`, `isc-12` |
-| `resources.tsx` + `resources.index/cisce/community.tsx` | `/resources[/cisce|/community]` | Shared browsing component, source-scoped |
+| `resources.tsx` + `resources.index/cisce/community.tsx` | `/resources[/cisce|/community]` | `/resources` is the global filename search; the other two are the source-scoped browsers, sharing one component |
 | `doxxmarks.tsx` | `/doxxmarks` | Curriculum browser + player |
 | `contribute.tsx` | `/contribute` | Submission form |
 | `admin.tsx` | `/admin` | Passcode gate, dashboard, section pages via `?section=` |
@@ -63,7 +63,8 @@ File-based, one file per route, `src/routes/__root.tsx` is the only root layout.
 Query-parameter conventions matter because share links depend on them:
 
 - `/doxxmarks?class=icse-10&subject=Biology&chapter=0&note=0` — `class` is a slug, `subject` is a display name, `chapter` and `note` are **indices** into the subject's chapter list and that chapter's note list.
-- `/resources?board=icse&class=10&subject=…` — filters are additive and every one of them is reflected in the URL so a filtered view is shareable.
+- `/resources?q=phy+2024` — only the query is in the URL (written with `history.replaceState`), so a search survives opening a file and Back returns to the same list. Structured filters are component state. See [Resource-Search](Resource-Search).
+- `/resources/community?class=icse-10&subject=Physics&file=<id>` — the source browsers are the ones with additive filters in the URL; `file` opens that document.
 
 `src/routes/routeTree.gen.ts` is generated — never edit it by hand.
 
@@ -77,6 +78,8 @@ Datasets are static JSON under `src/data/`, imported through `src/lib/resources-
 - `doxxmarks_resources.json` — the Doxxmarks curriculum (see [Doxxmarks-and-Signed-Links](Doxxmarks-and-Signed-Links)).
 
 Because the datasets ship as ES modules they are code-split with the route that needs them: opening ISC 12 never downloads ICSE 9's catalogue. Inside a catalogue, virtualisation (`@tanstack/react-virtual`) keeps a 400-file group cheap to scroll, and Fuse.js indexes only the active catalogue.
+
+`loadAllLibraryFiles(classSlugs)` is the one deliberate exception: `/resources` needs all four classes from both sources at once, so it fetches them on the first keystroke and memoises the flat list. The idle page must not call it — see [Resource-Search](Resource-Search).
 
 Server functions (`createServerFn` in `src/lib/*-server.ts`) handle everything that must not trust the client: ratings, views, downloads, shares, contributions, feedback, contact, admin, Drive, GitHub and Cloudflare calls.
 
@@ -106,6 +109,8 @@ src/
 │   ├── db.ts         # Neon client singleton
 │   ├── i18n.tsx      # dictionaries + t()
 │   ├── resources-data.ts / curriculum.ts / resource-lookup-server.ts
+│   ├── advanced-search.ts    # filename search: parse, score, facets, highlight
+│   ├── recent-searches.ts    # localStorage recents (max 5)
 │   ├── workflow-progress.ts  # GitHub step → category mapping
 │   ├── time-labels.ts        # the one clock: IST formatters for every timestamp
 │   ├── table-sort.ts         # null-aware column sorting for the stats tables

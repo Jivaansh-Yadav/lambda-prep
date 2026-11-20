@@ -2,6 +2,7 @@
 
 - [Home](Home)
 - [Architecture](Architecture)
+- [Resource Search](Resource-Search)
 - [Resource Pipeline](Resource-Pipeline)
 - [Doxxmarks & Signed Links](Doxxmarks-and-Signed-Links)
 - [Admin & Analytics](Admin-and-Analytics)

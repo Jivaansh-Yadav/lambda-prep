@@ -103,6 +103,7 @@ Rule: format the files you touch. Do not run a repo-wide `--fix` in a feature PR
 | --- | --- |
 | Landing page | `src/routes/index.tsx` + `src/styles.css` |
 | Class/resources browsing | `src/routes/resources*.tsx`, `src/components/lambda-prep/virtual-file-grid.tsx` |
+| Resource search | `src/lib/advanced-search.ts` + `src/hooks/use-advanced-file-search.ts` (see [Resource-Search](Resource-Search)) |
 | Doxxmarks player or notes | `src/components/lambda-prep/{doxx-watch,note-pdf-watch}.tsx` |
 | Admin dashboard | `src/routes/admin.tsx` (sections are components in the same file) |
 | Counters/ratings | `src/lib/{views,ratings,shares}-server.ts` |
