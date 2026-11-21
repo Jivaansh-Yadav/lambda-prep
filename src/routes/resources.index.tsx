@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router';
 import { ArrowUpRight, File, FileImage, FileSpreadsheet, FileText, Search, ShieldCheck, UsersRound } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { classes, pageHead } from '@/lib/lambda-prep';
@@ -12,6 +12,7 @@ import {
 import {
   createDefaultFilters,
   hasActiveSearchOrFilters,
+  type AdvancedSearchFilters,
   type EnrichedSearchableFile,
   type MatchMode,
   type RawSearchableFile,
@@ -24,17 +25,23 @@ import { VirtualFileGrid } from '@/components/lambda-prep/virtual-file-grid';
 import { FileRatingBadge } from '@/components/lambda-prep/file-rating-badge';
 import { Button } from '@/components/ui/button';
 import { CommunityLinks } from '@/components/lambda-prep/community-links';
-import { usePersistedFilters } from '@/lib/search-state';
+import {
+  applyFiltersToParams,
+  filtersDescribeSameUrl,
+  filtersFromSearch,
+  hasLibrarySearch,
+  librarySearchKey,
+  parseLibrarySearch,
+  type LibrarySearch,
+} from '@/lib/library-url';
 
 export const Route = createFileRoute('/resources/')({
-  // `?q=` is how the header quick search (and a shared link) hands a term to
-  // the library; the box keeps the URL in sync afterwards.
-  validateSearch: (search: Record<string, unknown>): { q?: string } => {
-    const q = typeof search['q'] === 'string' ? search['q'].trim() : '';
-    // An absent key, not `q: undefined` — with exactOptionalPropertyTypes the
-    // latter would force every <Link to="/resources"> to pass `search`.
-    return q ? { q } : {};
-  },
+  // The address bar *is* the library's state: `?q=` plus one key per active
+  // facet (`kind=pdf,docx`, `class=icse-10`, `sort=newest`, …). That is how the
+  // header quick search hands a term over, how a filtered search gets shared,
+  // and why Back from a file returns to the same result list. A bare
+  // `/resources` therefore stays bare — nothing to replay from storage.
+  validateSearch: (search: Record<string, unknown>): LibrarySearch => parseLibrarySearch(search),
   head: () => pageHead('Resource library', 'Find your ICSE and ISC class and explore subject-wise learning resources.', '/resources'),
   component: Resources,
 });
@@ -103,21 +110,15 @@ function GlobalHitCard({
 /** Resource Library hub with unified global filename search across Community and Official CISCE files. */
 function Resources() {
   const { t } = useI18n();
-  const { q: urlQuery } = Route.useSearch();
-  // Facets (and the query) are mirrored into sessionStorage so returning to
-  // the library — Back from a file, a tab reload — lands on the same filtered
-  // list instead of a blank search (GH #12).
-  //
-  // The query itself is *not* taken from storage: `?q=` is the only thing that
-  // can put the library into a searched state. A bare `/resources` (the
-  // "Explore resources" CTA, the nav link, Back to the library) therefore opens
-  // untouched instead of replaying last session's search — decided once, on
-  // mount, because the same route can be re-entered with a fresh search.
-  const [restoreStoredSearch] = useState(() => Boolean(urlQuery));
-  const [filters, setFilters] = usePersistedFilters('library', { restore: restoreStoredSearch });
-  // The address bar is written to only once the query above has been applied,
-  // so the first paint's empty defaults can't strip `?q=` off an incoming link.
-  const [urlSynced, setUrlSynced] = useState(false);
+  const router = useRouter();
+  const urlSearch = Route.useSearch();
+  // Seeded straight from the URL, on the server and on the client alike, so the
+  // first paint already shows the filtered state a shared link asked for.
+  const [filters, setFilters] = useState<AdvancedSearchFilters>(() => filtersFromSearch(urlSearch));
+  const searchKey = librarySearchKey(urlSearch);
+  // What the URL said last time an effect compared it. Seeded, so the mount
+  // render (which already matches) isn't treated as a navigation away.
+  const lastSearchKey = useRef(searchKey);
   const [corpusRequested, setCorpusRequested] = useState(false);
   const [libraryHits, setLibraryHits] = useState<ResourceSearchHit[] | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -169,25 +170,23 @@ function Resources() {
     return () => observer.disconnect();
   }, []);
 
-  // ?q= keeps a search shareable and — more importantly — survives the trip into
-  // a file view, so pressing Back returns to the same result list instead of an
-  // empty library page. It is also how the header quick search arrives here, so
-  // this has to react to a new value, not just the first render.
+  // The URL can change under a mounted page: the header quick search navigates
+  // to `/resources?q=…`, and the nav link goes back to a bare `/resources`.
+  // Either way the filters follow the address bar rather than drifting from it.
   useEffect(() => {
-    if (urlQuery) {
-      setFilters(current => (current.query === urlQuery ? current : { ...current, query: urlQuery }));
-      setCorpusRequested(true);
-      return;
-    }
-    // Losing `q` (a link back to the bare library, the CTA re-render) has to
-    // take the results with it — otherwise the page keeps showing matches for
-    // a term the URL no longer mentions.
-    setFilters(current => (hasActiveSearchOrFilters(current) ? createDefaultFilters() : current));
-  }, [urlQuery, setFilters]);
+    if (lastSearchKey.current === searchKey) return;
+    lastSearchKey.current = searchKey;
+    const fromUrl = filtersFromSearch(urlSearch);
+    // Same URL, new object: keep the existing state so a keystroke doesn't cost
+    // an extra render and a fresh search pass.
+    setFilters(current => (filtersDescribeSameUrl(current, fromUrl) ? current : fromUrl));
+    if (hasLibrarySearch(urlSearch)) setCorpusRequested(true);
+    // `urlSearch` is described completely by `searchKey`; depending on the
+    // object itself would fire on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchKey]);
 
-  useEffect(() => setUrlSynced(true), []);
-
-  // Same-route quick search: navigating to /resources?q= when the library is
+  // Same-route quick search: navigating to `/resources?q=…` when the library is
   // already mounted can resolve to identical router state (searching the same
   // term twice, say), so the header also fires this event.
   useEffect(() => {
@@ -199,7 +198,7 @@ function Resources() {
     }
     window.addEventListener('lambda-prep:quick-search', onQuickSearch);
     return () => window.removeEventListener('lambda-prep:quick-search', onQuickSearch);
-  }, [setFilters]);
+  }, []);
 
   // Restored filters arrive without any user interaction, so the corpus load
   // that AdvancedSearchBar normally triggers on typing has to happen here.
@@ -207,22 +206,22 @@ function Resources() {
     if (hasActiveSearchOrFilters(filters)) setCorpusRequested(true);
   }, [filters]);
 
-  // Mirror the term into `?q=` on every change — including the first keystroke
-  // after landing on a bare URL, which is what makes the query shareable and
-  // keeps the page refreshable. Nothing else in the URL is touched, so
-  // class/subject/file params survive.
+  // Every filter change is written back into the address bar, term and facets
+  // alike, so a filtered search is shareable, refreshable, and restored by Back.
+  //
+  // It goes through the router's history rather than `window.history`: a raw
+  // `replaceState` leaves the router convinced the URL still says something
+  // else, so the next nav-link click would rewrite the bar from that stale view
+  // and the filters would quietly stop matching it. `replace` keeps the browser
+  // and the router on the same page without adding Back-stack entries (ten
+  // keystrokes must not become ten stops on the way out).
   useEffect(() => {
-    if (!urlSynced) return;
     const url = new URL(window.location.href);
-    const trimmed = filters.query.trim();
-    const inUrl = url.searchParams.get('q') ?? '';
-    if (trimmed === inUrl) return;
-    if (trimmed) url.searchParams.set('q', trimmed);
-    else url.searchParams.delete('q');
+    applyFiltersToParams(url.searchParams, filters);
     if (url.href !== window.location.href) {
-      window.history.replaceState(window.history.state, '', url);
+      router.history.replace(`${url.pathname}${url.search}${url.hash}`, window.history.state);
     }
-  }, [filters.query, urlSynced]);
+  }, [filters, router]);
 
   return (
     <main className="container content-page">
