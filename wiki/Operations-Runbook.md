@@ -83,6 +83,15 @@ The panel now prints the underlying reason. The common ones:
 | `Could not read the cloudflare_integration row from Neon` | `DATABASE_URL` wrong/missing on this deployment, or Neon unreachable | check the Pages env var, then redeploy (env vars are baked per deployment) |
 | `Web Analytics isn't configured yet` | no `cloudflare_integration` row | seed it (account id + `rum_api_token`) |
 
+### Visits reads 0 while page loads are not
+
+`Visits` is Cloudflare's `sum.visits`: a visit is counted on the page load that brought someone in from **outside** the site, so internal navigation adds page loads without adding visits. Visits therefore sit far below page loads, and the two can legitimately diverge by 5–10×. A flat zero is different — it means the metric, not the traffic, is missing.
+
+1. The panel already guards this: when a window returns page loads but zero visits, `admin-server.ts` re-asks Cloudflare for the loads whose `refererHost` is not the tracked host (`VISIT_FILTER`) and uses those counts. That reproduces `sum.visits` exactly on this site's data.
+2. If it still reads 0, check the freshness line — `Cached · <time>` means the last five minutes' snapshot; press **Refresh** to force a live read and clear the range's cache row.
+3. Check which host the panel is counting: Deep analytics prints "Counting `<host>` only" under the traffic chart. A host Cloudflare does not instrument falls back to the canonical `SITE_URL` host automatically.
+4. If the whole panel is empty, this is the credentials path, not the metric — see the "Could not load analytics" table below.
+
 ### New domain
 
 The admin panel filters Cloudflare's RUM dataset by **request hostname** — the host in `SITE_URL` (`src/lib/lambda-prep.ts`) — not by Web Analytics site tag. So a domain move is a one-line change:

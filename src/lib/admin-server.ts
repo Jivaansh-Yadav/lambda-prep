@@ -34,7 +34,7 @@ import {
 import { getCloudflareIntegrationConfig } from "./cloudflare-integration-server";
 import { SITE_URL } from "./lambda-prep";
 import { resolveFileLocations } from "./resource-lookup-server";
-import { chunkWindows } from "./rum-windows";
+import { chunkWindows, type RumWindow } from "./rum-windows";
 import { BoundedStore } from "./rate-limit";
 import { constantTimeEquals } from "./secure-compare";
 import { clientIp } from "./client-ip";
@@ -473,6 +473,122 @@ async function deleteCache(range: AdminRange): Promise<void> {
   await sql.query(`DELETE FROM cloudflare_analytics_cache WHERE range = $1`, [range]);
 }
 
+// ---------------------------------------------------------------------
+// Visits fallback
+// ---------------------------------------------------------------------
+// `sum { visits }` is a derived field: Cloudflare counts a visit on the page
+// load that brought someone in from outside the site, and every load after
+// that is a page load with no visit of its own. That is why visits sit far
+// below page loads here — and it is also why the number can come back as 0
+// for a whole window while `count` stays healthy, which the panel would show
+// as "nobody visited" next to hundreds of loads. The same number is
+// queryable from `count` alone by asking for the loads whose referer host is
+// not this site (verified to match `sum { visits }` exactly on this site's
+// data), so a window that reports no visits at all is re-read that way
+// before the panel settles on a zero.
+const VISIT_FILTER = `bot: 0, requestHost: $host, refererHost_neq: $host, datetime_geq: $since, datetime_lt: $until`;
+
+function visitFallbackQuery(range: AdminRange): string {
+  const bucket = range === "24h" ? "datetimeHour" : "date";
+  const order = range === "24h" ? "datetimeHour_ASC" : "date_ASC";
+  return `
+  query GetVisitFallback($accountTag: String!, $host: String!, $since: Time!, $until: Time!, $limit: Int!) {
+    viewer {
+      accounts(filter: { accountTag: $accountTag }) {
+        visitBuckets: rumPageloadEventsAdaptiveGroups(
+          limit: $limit,
+          filter: { ${VISIT_FILTER} },
+          orderBy: [${order}]
+        ) {
+          count
+          dimensions { bucket: ${bucket} }
+        }
+        visitSections: rumPageloadEventsAdaptiveGroups(
+          limit: 1000,
+          filter: {
+            ${VISIT_FILTER},
+            OR: [
+              { requestPath_like: "/doxxmarks%" },
+              { requestPath_like: "/resources%" }
+            ]
+          }
+        ) {
+          count
+          dimensions { requestPath }
+        }
+      }
+    }
+  }
+`;
+}
+
+type VisitFallbackResponse = {
+  data?: {
+    viewer?: {
+      accounts?: Array<{
+        visitBuckets?: Array<{ count: number; dimensions: { bucket: string } }>;
+        visitSections?: Array<{ count: number; dimensions: { requestPath: string } }>;
+      }>;
+    };
+  };
+  errors?: Array<{ message: string }>;
+};
+
+/**
+ * Re-reads one range's visits from page-load counts (see VISIT_FILTER).
+ * Returns null — leaving whatever the primary query reported — when
+ * Cloudflare can't answer, so a missing fallback never becomes an error.
+ */
+async function fetchVisitFallback(
+  range: AdminRange,
+  host: string,
+  apiToken: string,
+  accountId: string,
+  windows: RumWindow[]
+): Promise<{ byBucket: Map<string, number>; byPath: Map<string, number> } | null> {
+  const byBucket = new Map<string, number>();
+  const byPath = new Map<string, number>();
+
+  for (const window of windows) {
+    try {
+      const response = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: visitFallbackQuery(range),
+          variables: {
+            accountTag: accountId,
+            host,
+            since: window.since.toISOString(),
+            until: window.until.toISOString(),
+            limit: RANGE_BUCKET_LIMIT[range],
+          },
+        }),
+      });
+
+      const parsed = await readGraphqlResponse<VisitFallbackResponse>(response);
+      if (!parsed.ok || parsed.json.errors?.length) return null;
+
+      const account = parsed.json.data?.viewer?.accounts?.[0];
+      for (const row of account?.visitBuckets ?? []) {
+        const bucket = row.dimensions.bucket;
+        byBucket.set(bucket, (byBucket.get(bucket) ?? 0) + row.count);
+      }
+      for (const row of account?.visitSections ?? []) {
+        const path = row.dimensions.requestPath;
+        byPath.set(path, (byPath.get(path) ?? 0) + row.count);
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  return { byBucket, byPath };
+}
+
 /**
  * Calls Cloudflare's GraphQL Analytics API for Web Analytics (RUM)
  * traffic plus the doxxmarks/resources section breakdown, over the given
@@ -554,6 +670,20 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
     for (const row of account?.sectionBreakdown ?? []) {
       const path = row.dimensions.requestPath;
       visitsByPath.set(path, (visitsByPath.get(path) ?? 0) + row.sum.visits);
+    }
+  }
+
+  // See VISIT_FILTER: a window that reports no visits at all while page
+  // loads are present is re-read from counts before the panel shows a zero.
+  const totalLoads = [...loadsByBucket.values()].reduce((sum, n) => sum + n, 0);
+  const totalApiVisits = [...visitsByBucket.values()].reduce((sum, n) => sum + n, 0);
+  if (totalApiVisits === 0 && totalLoads > 0) {
+    const fallback = await fetchVisitFallback(range, host, apiToken, accountId, windows);
+    if (fallback && fallback.byBucket.size > 0) {
+      visitsByBucket.clear();
+      for (const [bucket, count] of fallback.byBucket) visitsByBucket.set(bucket, count);
+      visitsByPath.clear();
+      for (const [path, count] of fallback.byPath) visitsByPath.set(path, count);
     }
   }
 
@@ -708,6 +838,7 @@ const RUM_QUERY = `
           limit: 1,
           filter: { bot: 0, requestHost: $host, datetime_geq: $since, datetime_lt: $until }
         ) {
+          count
           sum { visits }
         }
         topPaths: rumPageloadEventsAdaptiveGroups(
@@ -761,7 +892,7 @@ type RumGraphQLResponse = {
   data?: {
     viewer?: {
       accounts?: Array<{
-        total?: Array<{ sum: { visits: number } }>;
+        total?: Array<{ count?: number; sum?: { visits: number } }>;
         topPaths?: RumGroup[];
         topCountries?: RumGroup[];
         topDeviceTypes?: RumGroup[];
@@ -772,6 +903,152 @@ type RumGraphQLResponse = {
   };
   errors?: Array<{ message: string }>;
 };
+
+// Same idea as VISIT_FILTER above, one level up: when Cloudflare reports no
+// visits at all for a window that recorded page loads, ask for the loads
+// whose referer host is not this site instead and rank by those counts.
+const RUM_VISIT_FALLBACK_QUERY = `
+  query GetRumVisitFallback($accountTag: String!, $host: String!, $since: Time!, $until: Time!) {
+    viewer {
+      accounts(filter: { accountTag: $accountTag }) {
+        total: rumPageloadEventsAdaptiveGroups(
+          limit: 1,
+          filter: { ${VISIT_FILTER} }
+        ) {
+          count
+        }
+        topPaths: rumPageloadEventsAdaptiveGroups(
+          limit: 10,
+          filter: { ${VISIT_FILTER} },
+          orderBy: [count_DESC]
+        ) {
+          count
+          dimensions { metric: requestPath }
+        }
+        topCountries: rumPageloadEventsAdaptiveGroups(
+          limit: 10,
+          filter: { ${VISIT_FILTER} },
+          orderBy: [count_DESC]
+        ) {
+          count
+          dimensions { metric: countryName }
+        }
+        topDeviceTypes: rumPageloadEventsAdaptiveGroups(
+          limit: 10,
+          filter: { ${VISIT_FILTER} },
+          orderBy: [count_DESC]
+        ) {
+          count
+          dimensions { metric: deviceType }
+        }
+        topBrowsers: rumPageloadEventsAdaptiveGroups(
+          limit: 10,
+          filter: { ${VISIT_FILTER} },
+          orderBy: [count_DESC]
+        ) {
+          count
+          dimensions { metric: userAgentBrowser }
+        }
+        topReferrers: rumPageloadEventsAdaptiveGroups(
+          limit: 10,
+          filter: { ${VISIT_FILTER} },
+          orderBy: [count_DESC]
+        ) {
+          count
+          dimensions { metric: refererHost }
+        }
+      }
+    }
+  }
+`;
+
+type RumVisitFallbackGroup = { count: number; dimensions: { metric: string } };
+
+type RumVisitFallbackResponse = {
+  data?: {
+    viewer?: {
+      accounts?: Array<{
+        total?: Array<{ count: number }>;
+        topPaths?: RumVisitFallbackGroup[];
+        topCountries?: RumVisitFallbackGroup[];
+        topDeviceTypes?: RumVisitFallbackGroup[];
+        topBrowsers?: RumVisitFallbackGroup[];
+        topReferrers?: RumVisitFallbackGroup[];
+      }>;
+    };
+  };
+  errors?: Array<{ message: string }>;
+};
+
+/** Re-reads the RUM panel's visits from page-load counts (see VISIT_FILTER).
+ * Returns null when Cloudflare can't answer, leaving the primary numbers. */
+async function fetchRumVisitFallback(
+  host: string,
+  apiToken: string,
+  accountId: string,
+  windows: RumWindow[]
+): Promise<{
+  totalVisits: number;
+  topPaths: Map<string, number>;
+  topCountries: Map<string, number>;
+  topDeviceTypes: Map<string, number>;
+  topBrowsers: Map<string, number>;
+  topReferrers: Map<string, number>;
+} | null> {
+  const result = {
+    totalVisits: 0,
+    topPaths: new Map<string, number>(),
+    topCountries: new Map<string, number>(),
+    topDeviceTypes: new Map<string, number>(),
+    topBrowsers: new Map<string, number>(),
+    topReferrers: new Map<string, number>(),
+  };
+
+  const merge = (target: Map<string, number>, rows?: RumVisitFallbackGroup[]) => {
+    for (const row of rows ?? []) {
+      const label = row.dimensions.metric;
+      target.set(label, (target.get(label) ?? 0) + row.count);
+    }
+  };
+
+  for (const window of windows) {
+    try {
+      const response = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: RUM_VISIT_FALLBACK_QUERY,
+          variables: {
+            accountTag: accountId,
+            host,
+            since: window.since.toISOString(),
+            until: window.until.toISOString(),
+          },
+        }),
+      });
+
+      const parsed = await readGraphqlResponse<RumVisitFallbackResponse>(response);
+      if (!parsed.ok || parsed.json.errors?.length) return null;
+
+      const account = parsed.json.data?.viewer?.accounts?.[0];
+      if (!account) return null;
+
+      result.totalVisits += account.total?.[0]?.count ?? 0;
+      merge(result.topPaths, account.topPaths);
+      merge(result.topCountries, account.topCountries);
+      merge(result.topDeviceTypes, account.topDeviceTypes);
+      merge(result.topBrowsers, account.topBrowsers);
+      merge(result.topReferrers, account.topReferrers);
+    } catch {
+      return null;
+    }
+  }
+
+  return result;
+}
 
 type CachedRumPayload = Omit<Extract<AdminRumResult, { configured: true }>, "cache" | "configured">;
 
@@ -861,6 +1138,7 @@ async function fetchRumFromCloudflare(range: AdminRange, host: string): Promise<
   // 14d/30d query is downsampled by Cloudflare, which is why the detail
   // panels used to disagree with the chart above them.
   let totalVisits = 0;
+  let totalLoads = 0;
   const breakdowns = {
     topPaths: new Map<string, number>(),
     topCountries: new Map<string, number>(),
@@ -911,12 +1189,26 @@ async function fetchRumFromCloudflare(range: AdminRange, host: string): Promise<
       };
     }
 
-    totalVisits += account.total?.[0]?.sum.visits ?? 0;
+    totalLoads += account.total?.[0]?.count ?? 0;
+    totalVisits += account.total?.[0]?.sum?.visits ?? 0;
     mergeBreakdown(breakdowns.topPaths, account.topPaths);
     mergeBreakdown(breakdowns.topCountries, account.topCountries);
     mergeBreakdown(breakdowns.topDeviceTypes, account.topDeviceTypes);
     mergeBreakdown(breakdowns.topBrowsers, account.topBrowsers);
     mergeBreakdown(breakdowns.topReferrers, account.topReferrers);
+  }
+
+  // See VISIT_FILTER: a window with page loads but no visits at all is
+  // re-read from referer-based counts before the panel reports a zero.
+  if (totalVisits === 0 && totalLoads > 0) {
+    const fallback = await fetchRumVisitFallback(host, apiToken, accountId, windows);
+    if (fallback && fallback.totalVisits > 0) {
+      totalVisits = fallback.totalVisits;
+      for (const key of Object.keys(breakdowns) as Array<keyof typeof breakdowns>) {
+        breakdowns[key].clear();
+        for (const [label, visits] of fallback[key]) breakdowns[key].set(label, visits);
+      }
+    }
   }
 
   if (totalVisits === 0 && host !== TRACKED_HOST) {
