@@ -78,7 +78,7 @@ export const WORKFLOW_CATEGORIES: CategoryDef[] = [
   { key: "setup", label: "Setup", description: "Checkout, Node/Python toolchains, Drive credentials" },
   { key: "crawl", label: "Drive crawl", description: "Walks the Drive folder tree and lists every file" },
   { key: "datasets", label: "Datasets", description: "Transform, split, sort and count the resource JSON" },
-  { key: "instarevision", label: "InstaRevision", description: "Re-signs the 7-day GCS PDF links" },
+  { key: "instarevision", label: "InstaRevision", description: "Re-applies the public revision-note PDF links" },
   { key: "commit", label: "Commit", description: "Cleans up secrets and commits the regenerated data" },
   { key: "runner", label: "Runner", description: "GitHub's own job setup and teardown steps" },
   { key: "other", label: "Other", description: "Steps without a category tag" },

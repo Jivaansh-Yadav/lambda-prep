@@ -10,9 +10,8 @@
 // link.
 //
 // Builds one in-memory index (file id -> { name, classLabel }) by walking
-// every indexed resources dataset (both sources, every class) plus
-// Doxxmarks' doxxmarks_resources.json revisionNotes — the same two data sources
-// the public Resources/Doxxmarks pages themselves read from — and caches
+// every indexed resources dataset (both sources, every class) — the same data
+// sources the public Resources pages themselves read from — and caches
 // it in module scope, since the dataset only changes when the app is
 // redeployed (e.g. after an "Update resource datasets" run), not between
 // requests within the same server instance.
@@ -24,7 +23,6 @@ import {
   loadResourceMisc,
   loadResourceSubject,
 } from "./resources-data";
-import { curriculumClasses } from "./curriculum";
 
 export type FileLocation = {
   name: string;
@@ -42,13 +40,6 @@ let indexPromise: Promise<Map<string, FileLocation>> | null = null;
 
 function classLabel(board: string, grade: string): string {
   return `${board} Class ${grade}`;
-}
-
-/** Extracts the Drive file id from a `.../file/d/<id>/view`-style link
- * (the shape every revisionNotes entry in doxxmarks_resources.json uses). */
-function driveIdFromLink(link: string): string | null {
-  const match = /\/file\/d\/([^/]+)/.exec(link);
-  return match?.[1] ?? null;
 }
 
 async function buildIndex(): Promise<Map<string, FileLocation>> {
@@ -74,31 +65,6 @@ async function buildIndex(): Promise<Map<string, FileLocation>> {
         const misc = await loadResourceMisc(source, cls.slug);
         for (const item of misc) {
           index.set(item.id, { name: item.name, classLabel: label, classSlug: cls.slug, subject: null, source });
-        }
-      }
-    }
-  }
-
-  // Doxxmarks InstaRevision chapter notes: doxxmarks_resources.json stores plain
-  // {name, link} entries per chapter, not ResourceItems, so resolve the
-  // file id out of the Drive link and use the chapter (+ subject) name as
-  // the display name — a generic "InstaRevision Notes" label (what the
-  // viewer-facing page shows) would tell an admin nothing useful.
-  for (const curriculumClass of curriculumClasses) {
-    const classMeta = classes.find((c) => c.board === curriculumClass.board && c.roman === curriculumClass.roman);
-    const label = classMeta ? classLabel(classMeta.board, classMeta.grade) : `${curriculumClass.board} Class ${curriculumClass.roman}`;
-    for (const subject of curriculumClass.subjects) {
-      for (const chapter of subject.chapters) {
-        for (const note of chapter.revisionNotes ?? []) {
-          const id = driveIdFromLink(note.link);
-          if (!id) continue;
-          index.set(id, {
-            name: `${chapter.name} — ${subject.name}`,
-            classLabel: label,
-            classSlug: classMeta?.slug ?? null,
-            subject: subject.name,
-            source: null,
-          });
         }
       }
     }
@@ -162,10 +128,9 @@ export async function resolveFileLocations(fileIds: readonly string[]): Promise<
 }
 
 /** Whether `fileId` corresponds to a real, indexed resource file (a
- * crawled Drive file or a Doxxmarks InstaRevision note) — i.e. something
- * that actually appears somewhere on the public Resources/Doxxmarks
- * pages. Used to reject ratings/feedback for made-up ids before they're
- * ever written to the database (GH issue #6). */
+ * crawled Drive file) — i.e. something that actually appears somewhere on
+ * the public Resources pages. Used to reject ratings/feedback for made-up
+ * ids before they're ever written to the database (GH issue #6). */
 export async function isKnownFileId(fileId: string): Promise<boolean> {
   const index = await getIndex();
   return index.has(fileId);

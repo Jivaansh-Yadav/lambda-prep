@@ -5,14 +5,14 @@
 // "Revision Notes" (InstaRevision) PDF. This needs a short-lived
 // EXTRAMARKS_TOKEN (teacher login JWT, ~60min) read from the Extramarks
 // teacher app's localStorage: JSON.parse(localStorage.extramarks_user)
-// .access_token. Background: wiki/Doxxmarks-and-Signed-Links.md.
+// .access_token. Background: wiki/Doxxmarks-and-Revision-Notes.md.
 //
 // The output (insta-revision-sources.json) has NO expiry — folder paths in
 // GCS don't change — so it's committed to the repo and only needs
 // regenerating when new chapters/subjects are added on Extramarks. The
-// separate generate-insta-revision-links.mjs script turns this into actual
-// signed URLs every week using only a static credential (no token needed),
-// and is what the GitHub Action runs.
+// separate apply-insta-revision-notes.mjs script turns those paths into
+// public bucket URLs (no signing, no credentials, no network) and is what
+// the GitHub Action runs.
 //
 // Usage:
 //   EXTRAMARKS_TOKEN=... node discover-insta-revision-sources.mjs [--out ../../src/data/insta-revision-sources.json]

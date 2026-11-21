@@ -16,7 +16,7 @@ Lambda/            (the Drive folder keeps its original name)
 └── Doxxmarks/<class>/<subject>/<chapter> - InstaRevision.pdf
 ```
 
-Folder names are matched case-insensitively: `icse - ix` → `icse-9` via `CLASS_FOLDER_TO_SLUG`. An unrecognised top-level folder is logged and skipped rather than failing the crawl — that is how a new folder can be added to Drive without breaking the weekly run.
+Folder names are matched case-insensitively: `icse - ix` → `icse-9` via `CLASS_FOLDER_TO_SLUG`. An unrecognised top-level folder is logged and skipped rather than failing the crawl — that is how a new folder can be added to Drive without breaking the run.
 
 ## The five stages
 
@@ -28,7 +28,7 @@ Folder names are matched case-insensitively: `icse - ix` → `icse-9` via `CLASS
 | 4 | Sort | `scripts/sort-manifest-subjects.py` | same manifests, subjects reordered |
 | 5 | Count | `scripts/count-resources.py` | `src/data/resource-counts.json` |
 
-Then a sixth, independent pair of steps re-signs the Doxxmarks PDFs — see [Doxxmarks-and-Signed-Links](Doxxmarks-and-Signed-Links).
+Then one independent step re-derives the Doxxmarks revision-note links from their public bucket paths — see [Doxxmarks-and-Revision-Notes](Doxxmarks-and-Revision-Notes).
 
 ### 1. Crawl
 
@@ -102,12 +102,12 @@ In CI the orchestrator is **not** used. `.github/workflows/update-resources.yml`
 
 `.github/workflows/update-resources.yml`
 
-- **Schedule:** `0 3 * * 1` — Mondays 03:00 UTC. Also `workflow_dispatch`, which is what the admin panel's “Update resource datasets” button calls.
+- **Trigger:** `workflow_dispatch` only — there is no cron. Nothing in the datasets expires any more (revision notes are plain public-bucket URLs), so a run is only worth starting when Drive content actually changed. The admin panel's “Update resource datasets” button is the normal entry point.
 - **Permissions:** `contents: write` (the job commits), nothing else.
 - **Concurrency:** group `update-resource-datasets`, `cancel-in-progress: false` — two crawls racing the same generated files would conflict and the second push would be rejected after a full run.
 - **Timeout:** `30` minutes. A hung Drive crawl used to be able to burn GitHub's 6-hour default.
 - **Step naming:** every step begins with a `[Category]` tag (`[Setup]`, `[Crawl]`, `[Datasets]`, `[InstaRevision]`, `[Commit]`). The admin tracker groups by that tag — **keep the tag when adding or renaming a step**, or it lands in “Other”.
-- **Credentials:** both credentials the run needs live in Neon, so the workflow holds exactly one secret — `DATABASE_URL`. `scripts/drive-crawl/neon-config.mjs` is the only reader: the `[Setup]` step's `fetch-credentials.mjs` pulls `drive_integration.service_account_json`, validates it has a `client_email` and `private_key`, and writes `scripts/drive-crawl/service-account.json` with mode `600`; the `[InstaRevision]` step's `generate-insta-revision-links.mjs` pulls the upload credential from `insta_revision_integration` and builds the `Authorization` header itself. Neither script has a fallback literal — a missing row is a loud failure, not a stale credential. The Drive validation exists because googleapis falls back to anonymous Application Default Credentials when that file is empty and reports it as a Drive permission error. `SERVICE_ACCOUNT` and `INSTA_REVISION_AUTH` remain as env overrides for a local run. See [Database](Database) for the rows.
+- **Credentials:** the only credential the run needs is the Drive service-account key in Neon, so the workflow holds exactly one secret — `DATABASE_URL`. `scripts/drive-crawl/neon-config.mjs` is the only reader: the `[Setup]` step's `fetch-credentials.mjs` pulls `drive_integration.service_account_json`, validates it has a `client_email` and `private_key`, and writes `scripts/drive-crawl/service-account.json` with mode `600`. The `[InstaRevision]` step needs no credential at all: it rewrites local JSON from public bucket paths.
 - **Commit step:** deletes the service-account file first, writes a `git diff --stat -- src/data` summary into the job summary, then commits only if something changed:
 
 ```bash

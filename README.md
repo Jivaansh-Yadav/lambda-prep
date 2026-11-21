@@ -2,7 +2,7 @@
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:04070f,55:101c33,100:3b82f6&height=235&section=header&text=%CE%9B%20Lambda%20Prep&fontSize=44&fontColor=eaf2ff&fontAlignY=40&desc=Four%20classes.%20One%20catalogue.%20A%20pipeline%20that%20refreshes%20itself.&descSize=17&descAlignY=62&animation=twinkling" alt="Lambda Prep" width="100%">
 
-<img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=500&size=19&duration=3200&pause=900&color=60a5fa&center=true&vCenter=true&width=760&lines=ICSE%209%2C%20ICSE%2010%2C%20ISC%2011%2C%20ISC%2012%20%E2%80%94%20CISCE%20and%20community;Ratings%2C%20views%2C%20downloads%20and%20shares%20in%20Postgres;A%20weekly%20GitHub%20Actions%20refresh%20you%20can%20watch%20step%20by%20step" alt="Typing animation" />
+<img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=500&size=19&duration=3200&pause=900&color=60a5fa&center=true&vCenter=true&width=760&lines=ICSE%209%2C%20ICSE%2010%2C%20ISC%2011%2C%20ISC%2012%20%E2%80%94%20CISCE%20and%20community;Ratings%2C%20views%2C%20downloads%20and%20shares%20in%20Postgres;A%20GitHub%20Actions%20refresh%20you%20can%20watch%20step%20by%20step" alt="Typing animation" />
 
 <br />
 
@@ -30,7 +30,7 @@ Lambda Prep is a study-resource portal for **ICSE 9, ICSE 10, ISC 11 and ISC 12*
 
 Every file has a rating, a view count, a download count and a share action that persist across sessions. The landing page ranks **Editor's Choice** from those ratings rather than a hand-written list, so the top of the homepage follows what students actually open.
 
-Content is not uploaded by hand. A **weekly GitHub Actions run** re-crawls Google Drive, rebuilds every JSON dataset, re-signs the Doxxmarks PDF links, and commits the result. The admin panel can trigger the same run and shows it progressing **category by category** while it happens.
+Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the admin panel) re-crawls Google Drive, rebuilds every JSON dataset, re-applies the Doxxmarks revision-note links, and commits the result. The admin panel can trigger the same run and shows it progressing **category by category** while it happens.
 
 ---
 
@@ -41,7 +41,7 @@ Content is not uploaded by hand. A **weekly GitHub Actions run** re-crawls Googl
 | `/` | Landing page: four class cards, Editor's Choice, per-class counts |
 | `/classes/$classId` | One class, its two catalogues, subjects in Featured-first then A–Z order |
 | `/resources` | Browse surface; `/resources/cisce` and `/resources/community` scope it |
-| `/doxxmarks` | Chapter-wise InstaRevision library: classes → subjects → chapters → notes |
+| `/doxxmarks` | Chapter-wise revision-notes library: classes → subjects → chapters → notes |
 | `/contribute` | Student submission form, plus contact and feedback server functions |
 | `/admin` | Passcode-gated dashboard: analytics, dataset pipeline, moderation |
 | `/sitemap.xml` | Real route; a hand-kept entry table (path, priority, `lastmod`), `<loc>` built from `SITE_URL` |
@@ -70,7 +70,7 @@ Content is not uploaded by hand. A **weekly GitHub Actions run** re-crawls Googl
 
 ## The pipeline
 
-`.github/workflows/update-resources.yml` runs every Monday at 03:00 UTC, or on demand from the admin panel. Every step name carries a `[Category]` tag, which is what turns a flat Actions log into the grouped progress view inside the dashboard.
+`.github/workflows/update-resources.yml` runs only on demand, from the admin panel. Every step name carries a `[Category]` tag, which is what turns a flat Actions log into the grouped progress view inside the dashboard.
 
 ```
 [Setup]         checkout · node · python · Drive credentials · crawl deps
@@ -79,7 +79,7 @@ Content is not uploaded by hand. A **weekly GitHub Actions run** re-crawls Googl
                 split-resources-dataset.py    → sharded datasets per subject
                 sort-manifest-subjects.py     → Featured first, then A–Z
                 count-resources.py            → resource-counts.json
-[InstaRevision] generate + apply signed links → doxxmarks_resources.json
+[InstaRevision] apply public revision-note links → doxxmarks_resources.json
 [Commit]        drop credentials · diff summary · commit + push
 ```
 
@@ -106,7 +106,7 @@ lambda-prep/
 ├── src/data/                   # doxxmarks_resources.json · resources-*.json · manifests
 ├── scripts/
 │   ├── generate-all-resources.js     # local 5-step orchestrator
-│   ├── drive-crawl/                  # Drive crawler + InstaRevision link signing
+│   ├── drive-crawl/                  # Drive crawler + revision-note links
 │   ├── transform-resources.py
 │   ├── split-resources-dataset.py
 │   ├── sort-manifest-subjects.py
@@ -159,12 +159,12 @@ Add `VITE_CF_BEACON_TOKEN` to the host's build environment (not just locally) if
 | --- | --- |
 | [Architecture](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Architecture) | Request path, SSR entry, routing, data loading, error handling |
 | [Resource-Pipeline](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Resource-Pipeline) | Every crawl/transform step, sharding rules, failure modes |
-| [Doxxmarks-and-Signed-Links](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Doxxmarks-and-Signed-Links) | Chapter curriculum, GCS signed URLs, the 7-day rotation |
+| [Doxxmarks-and-Revision-Notes](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Doxxmarks-and-Revision-Notes) | Chapter curriculum and the public-bucket revision-note URLs |
 | [Admin-and-Analytics](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Admin-and-Analytics) | Passcode gate, KPIs, category-grouped run tracker |
 | [Database](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Database) | Tables, counter semantics, cache tables, degraded mode |
 | [Deployment](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Deployment) | Cloudflare Pages build, headers, env vars, DNS |
 | [SEO-and-Short-Links](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/SEO-and-Short-Links) | Canonical URL, sitemap route, OG images, `/drive` + `/github` |
-| [Operations-Runbook](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Operations-Runbook) | Weekly refresh, what breaks and how to fix it |
+| [Operations-Runbook](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Operations-Runbook) | The on-demand refresh, what breaks and how to fix it |
 | [Contributing](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Contributing) | Local setup, conventions, test expectations |
 
 ---

@@ -52,9 +52,8 @@ function isH3SwallowedErrorBody(body: string): boolean {
 //
 // The CSP is scoped to what the app actually loads:
 //   - drive.google.com        -> resource PDF previews (resource-watch)
-//   - storage.googleapis.com  -> Doxxmarks InstaRevision notes (direct
-//                              signed GCS PDF URLs, embedded via
-//                              note-pdf-watch's iframe)
+//   - storage.googleapis.com  -> Doxxmarks InstaRevision notes (public-bucket
+//                              PDF URLs, embedded via note-pdf-watch's iframe)
 //   - mscontent-gcp.extramarks.com -> Doxxmarks interactive lessons (iframe)
 //                              and lesson videos (HLS: manifest + segments via
 //                              hls.js, which fetches them with XHR)

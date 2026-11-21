@@ -4,7 +4,7 @@
 // The service-account key is not a repository secret of its own: it lives in
 // Neon (`drive_integration.service_account_json`), which is where the running
 // app reads it from too. Keeping one copy means a rotated key cannot leave the
-// weekly crawl authenticating with a stale one — the failure mode that looks
+// crawl authenticating with a stale one — the failure mode that looks
 // like "Permission denied on the service".
 //
 // Credential sources, in order:

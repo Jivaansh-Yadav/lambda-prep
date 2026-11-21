@@ -33,7 +33,7 @@ node scripts/generate-all-resources.js --skip-crawl   # rebuild datasets from la
 
 ### Data
 - `src/data/*` is generated. If you need different content, change the pipeline, not the JSON.
-- Only `doxxmarks_resources.json`'s chapter skeleton and `insta-revision-sources.json` are hand-structured.
+- Only `doxxmarks_resources.json`'s chapter skeleton and `insta-revision-sources.json` are hand-structured; the revision-note URLs are derived from the latter.
 - Counts come from `resource-counts.json`; never compute a total on the client.
 
 ### Server functions

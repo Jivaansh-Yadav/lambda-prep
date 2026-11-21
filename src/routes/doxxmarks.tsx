@@ -113,7 +113,7 @@ function Doxxmarks() {
   const closeLesson = () => { if (canGoBack) goBack(); else navigate({ search: prev => ({ ...prev, lesson: undefined }) }); };
 
   // Chapter revision notes are plain `{name, link}` entries in
-  // doxxmarks_resources.json — direct, signed GCS PDF URLs (refreshed weekly) rather
+  // doxxmarks_resources.json — direct, public-bucket PDF URLs rather
   // than Drive file ids, so they're rendered through NotePdfWatch's own
   // iframe instead of ResourceWatch/Drive's `/preview` viewer.
   const noteItems: LessonLink[] = chapter?.revisionNotes ?? [];

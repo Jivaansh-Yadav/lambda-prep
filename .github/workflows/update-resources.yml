@@ -1,11 +1,13 @@
 name: Update resource datasets
 
 # Re-crawls the Google Drive CISCE/Study-Materials folders, rebuilds the
-# transform/split/sort/count datasets, refreshes the InstaRevision PDF
-# signed-link manifest (GCS signed URLs expire after 7 days — the max GCS
-# allows — so this must run at least weekly), and commits the regenerated
-# JSON datasets back to the repo. Run on a schedule, or manually via
-# workflow_dispatch (the admin panel's "Update resource datasets" button).
+# transform/split/sort/count datasets, re-applies the InstaRevision revision-note
+# links, and commits the regenerated JSON datasets back to the repo.
+#
+# Manual only: the admin panel's "Update resource datasets" button dispatches it
+# with workflow_dispatch. There is no cron — nothing in the datasets expires any
+# more (revision notes are plain public-bucket URLs), so the only reason to run
+# is that Drive content actually changed.
 #
 # Every step name starts with a "[Category]" tag. The admin panel groups
 # steps by that tag and shows live per-category progress while a run is in
@@ -13,9 +15,6 @@ name: Update resource datasets
 # the run finishes), so keep the tag when adding or renaming steps — an
 # untagged step still shows up, under "Other".
 on:
-  schedule:
-    # 03:00 UTC every Monday — adjust as needed.
-    - cron: "0 3 * * 1"
   workflow_dispatch: {}
 
 permissions:
@@ -96,17 +95,12 @@ jobs:
         run: python3 scripts/count-resources.py
 
       # ------------------------------------------------------------------
-      # [InstaRevision] — re-sign the GCS PDF URLs (7-day expiry)
+      # [InstaRevision] — public-bucket note links
       # ------------------------------------------------------------------
-      # The upload credential is not a secret of its own any more: like the Drive
-      # key it is read from Neon, so the step only needs DATABASE_URL.
-      - name: "[InstaRevision] Refresh signed PDF links"
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: node scripts/drive-crawl/generate-insta-revision-links.mjs
-
-      - name: "[InstaRevision] Apply signed links to doxxmarks_resources.json"
-        run: node scripts/drive-crawl/apply-insta-revision-links.mjs
+      # No signing and no credentials: a note's URL is derived from its bucket
+      # path, so this step is a pure local rewrite of doxxmarks_resources.json.
+      - name: "[InstaRevision] Apply public revision-note links"
+        run: node scripts/drive-crawl/apply-insta-revision-notes.mjs
 
       # ------------------------------------------------------------------
       # [Commit] — clean up the secret, then commit whatever changed

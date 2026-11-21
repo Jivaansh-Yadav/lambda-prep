@@ -42,7 +42,7 @@ This file is the SSR entry (`tanstackStart.server.entry = "server"` in `vite.con
 
 The CSP itself is scoped to what the app really uses:
 
-- `frame-src` — `drive.google.com` (embedded PDFs), `mscontent-gcp.extramarks.com` (interactive classes), `storage.googleapis.com` (signed InstaRevision PDFs).
+- `frame-src` — `drive.google.com` (embedded PDFs), `mscontent-gcp.extramarks.com` (interactive classes), `storage.googleapis.com` (revision-note PDFs from the public mirror bucket).
 - `connect-src` — Extramarks, `cloudflareinsights.com` (only needed if a Web Analytics snippet is ever added back; Cloudflare Pages collects page loads without one).
 - `script-src` — `static.cloudflareinsights.com`; `img-src` — `drive.google.com` thumbnails.
 
@@ -75,7 +75,7 @@ Datasets are static JSON under `src/data/`, imported through `src/lib/resources-
 - `manifest.json` per class — subjects, their shard file (if any), Featured ordering and counts.
 - `resources-{cisce,community}-<class>.json` — the whole catalogue for a class, **or** a directory of per-subject shards once it crosses the size threshold (see [Resource-Pipeline](Resource-Pipeline)).
 - `resource-counts.json` — per class, per source, per subject totals written by `scripts/count-resources.py`; a build/reporting artifact. The class page's own total is summed from the manifest counts, so the two agree only if both count files inside `editorFolders` (see [Resource-Pipeline](Resource-Pipeline)).
-- `doxxmarks_resources.json` — the Doxxmarks curriculum (see [Doxxmarks-and-Signed-Links](Doxxmarks-and-Signed-Links)).
+- `doxxmarks_resources.json` — the Doxxmarks curriculum (see [Doxxmarks-and-Revision-Notes](Doxxmarks-and-Revision-Notes)).
 
 Because the datasets ship as ES modules they are code-split with the route that needs them: opening ISC 12 never downloads ICSE 9's catalogue. Inside a catalogue, virtualisation (`@tanstack/react-virtual`) keeps a 400-file group cheap to scroll, and Fuse.js indexes only the active catalogue.
 

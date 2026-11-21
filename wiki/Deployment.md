@@ -55,7 +55,7 @@ Notes that have bitten before:
 | --- | --- | --- | --- |
 | `DATABASE_URL` | Pages env (secret) | for counters/admin | Neon Postgres |
 | `ADMIN_PASSCODE` | Pages env (secret) | for `/admin` | The gate's passcode — unset means every admin server function rejects every attempt |
-| `DATABASE_URL` | GitHub Actions secret | for the weekly run | The only credential the workflow holds: both the Drive key and the InstaRevision upload credential are read from Neon with it |
+| `DATABASE_URL` | GitHub Actions secret | next manual run | The only credential the workflow holds: the Drive service-account key is read from Neon with it |
 | `SERVICE_ACCOUNT` | GitHub Actions secret | optional | Raw key JSON, only a fallback when the runner has no database access |
 | `NODE_VERSION` | Pages env | no | overrides `.nvmrc` when you need a different Node for one build |
 
@@ -118,4 +118,4 @@ curl -sI https://lambda-prep.pages.dev/github      | grep -i location,http
 curl -s  https://lambda-prep.pages.dev/sitemap.xml | head -5
 ```
 
-Then open `/doxxmarks?class=icse-10&subject=Biology&chapter=0&note=0` and confirm the revision-note PDF loads from `storage.googleapis.com` — that single check exercises the dataset, the signed links and the CSP `frame-src` rule at once.
+Then open `/doxxmarks?class=icse-10&subject=Biology&chapter=0&note=0` and confirm the revision-note PDF loads from `storage.googleapis.com` — that single check exercises the dataset, the public bucket URL and the CSP `frame-src` rule at once.

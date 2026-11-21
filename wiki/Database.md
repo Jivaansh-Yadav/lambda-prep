@@ -58,15 +58,14 @@ Because a row is written at most once per session, `COUNT(*)` reads as *sessions
 | `drive_integration` | `service_account_json`, `folder_id`, `oauth_client_id`, `oauth_client_secret`, `oauth_refresh_token` | Crawling Drive, listing a class folder, contributing uploads |
 | `github_integration` | `pat`, `owner`, `repo`, `workflow_file`, `ref` | Dispatching and tracking the dataset workflow |
 | `cloudflare_integration` | `account_id`, `rum_api_token` | Cloudflare GraphQL analytics + Web Analytics (RUM) |
-| `insta_revision_integration` | `username`, `password` | HTTP Basic pair for `upload.extramarks.com/getSignedUrl`. The weekly job uses it to mint 7-day signed URLs for the revision-note PDFs; the endpoint signs whatever path it is sent, so the pair is effectively read access to `gs://em_content_private` |
 
-All four are **seeded by hand** in the Neon SQL editor (the admin panel only prints instructions, it has no write path) and read through a `LIMIT 1` `id = true` row — one integration of each kind per deployment, which keeps the queries trivial and the UI honest.
+All three are **seeded by hand** in the Neon SQL editor (the admin panel only prints instructions, it has no write path) and read through a `LIMIT 1` `id = true` row — one integration of each kind per deployment, which keeps the queries trivial and the UI honest.
 
 `cloudflare_integration` used to carry a `rum_site_tag` column. Nothing reads it: the admin analytics queries filter Cloudflare's RUM dataset by request hostname (from `SITE_URL`) instead of by site tag, precisely because a tag is bound to one hostname and silently returns zero after a domain move. The column can be dropped.
 
 > After the rename, `github_integration` must point at `Jivaansh-Yadav/lambda-prep`. See [Admin-and-Analytics](Admin-and-Analytics).
 
-`insta_revision_integration` has no admin UI — it is seeded by hand, like the others, and is read only by `scripts/drive-crawl/neon-config.mjs`. It exists so the credential is not a literal in the source tree — the script used to carry the `Basic` header inline while this repository was public. The current history does not contain the value (one squashed base commit, no reachable object matches), so the reason to keep it in a row is the future, not the past: it can be replaced without a commit, and only the pipeline can read it. The credential itself is unscoped — see [Operations-Runbook](Operations-Runbook#the-insta-revision-signing-credential). Only the pipeline reads it; nothing in `src/` touches it, so a missing row breaks the weekly job and nothing else.
+`insta_revision_integration` is retired and has been dropped. It held the HTTP Basic pair for `upload.extramarks.com/getSignedUrl`, the endpoint that minted 7-day GCS signed URLs for the Doxxmarks revision-note PDFs. The notes now load from the public mirror bucket (`gs://emnewcontent`, same object paths under a `beta/` prefix), which needs no signing at all: a note URL is derived from its path by `scripts/drive-crawl/apply-insta-revision-notes.mjs`. Anything that still holds the old pair should treat it as compromised — see [Operations-Runbook](Operations-Runbook).
 
 ### Caches
 

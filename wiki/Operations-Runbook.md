@@ -4,11 +4,9 @@
 
 | Cadence | What happens | Who |
 | --- | --- | --- |
-| Every Monday 03:00 UTC | `update-resources.yml` re-crawls Drive, rebuilds datasets, re-signs PDF links, commits, and Pages redeploys | automatic |
-| Every ~7 days | Signed InstaRevision links expire. The weekly run is what keeps them alive — **a skipped week breaks chapter revision notes** | automatic |
-| When Drive content changes | Nothing extra: the next scheduled run picks it up | creator |
+| When Drive content changes | `/admin` → Update resource datasets: re-crawls Drive, rebuilds datasets, re-applies revision-note links, commits, and Pages redeploys | creator, manual |
+| Nothing on a timer | No workflow cron, no expiring links, no rotating secret — an idle week is supposed to be silent | — |
 | When the Doxxmarks folder tree changes | `node scripts/drive-crawl/discover-insta-revision-sources.mjs`, review the diff to `src/data/insta-revision-sources.json`, commit | creator, manual |
-| Ad hoc | `/admin` → Manage resources → Update resource datasets | creator |
 
 ## Health check (2 minutes)
 
@@ -20,21 +18,23 @@ curl -sI https://lambda-prep.pages.dev/github | grep -i location         # repos
 curl -s  https://lambda-prep.pages.dev/sitemap.xml | head -5             # absolute URLs
 ```
 
-Then open `/doxxmarks?class=icse-10&subject=Biology&chapter=0&note=0`. If the PDF loads, the dataset, the signature and the CSP are all healthy.
+Then open `/doxxmarks?class=icse-10&subject=Biology&chapter=0&note=0`. If the PDF loads, the dataset, the public bucket URL and the CSP are all healthy.
 
 ## Failure playbook
 
 ### Revision notes return 403 / blank frame
 
-1. Open the link's `expiresAt` in `doxxmarks_resources.json` — if it is in the past, the weekly run has not completed.
-2. Re-run the workflow (`[InstaRevision]` steps only matter, but the whole run is cheap).
-3. If it fails, see “Crawl fails” below — the signing step needs the crawl-independent sources file, but the workflow order means a crawl failure stops before it.
-4. If the URL is fresh and still 403s, the Drive-side PDF moved: run `discover-insta-revision-sources.mjs`, review, commit, then re-run.
+Nothing here is signed any more, so there is no expiry to blame.
+
+1. Open the link out of `doxxmarks_resources.json` in a new tab.
+2. `403` — the object is not in the public mirror (`gs://emnewcontent/beta/…`), only in the private bucket. That is an upstream publishing gap, not a pipeline bug: the same path under `gs://em_content_private` is what Extramarks uploaded.
+3. `404` — the PDF moved or was re-uploaded under a new path. Re-derive the source list: `discover-insta-revision-sources.mjs`, review the diff, commit, then run `apply-insta-revision-notes.mjs` (or the whole workflow).
+4. A PDF that opens in a new tab but renders white in the player is a sandbox/CSP problem, not a link problem — see the next section.
 
 ### Iframe is blank but the URL works in a new tab
 
 - PDF viewers need `allow-same-origin` in the sandbox attribute; a fully sandboxed frame renders white.
-- Check `frame-src` in **both** `src/server.ts` and `public/_headers`. It must include `storage.googleapis.com` for signed PDFs, `drive.google.com` for Drive PDFs and `mscontent-gcp.extramarks.com` for interactive classes.
+- Check `frame-src` in **both** `src/server.ts` and `public/_headers`. It must include `storage.googleapis.com` for revision-note PDFs, `drive.google.com` for Drive PDFs and `mscontent-gcp.extramarks.com` for interactive classes.
 
 ### Fullscreen button does nothing inside an embedded frame
 
@@ -153,29 +153,24 @@ The old Vercel deployment used a takedown redirect in both `public/_redirects` a
 | Secret | Where | Rotation effect |
 | --- | --- | --- |
 | `drive_integration.service_account_json` (Neon) | DB row | Next run picks it up automatically — no secret to update |
-| `insta_revision_integration` (Neon) | DB row | Next run picks it up — but nobody here can rotate it. Ask Extramarks for a new pair, ideally one scoped to a per-partner prefix; see below |
-| `DATABASE_URL` | GitHub Actions secret | None until next run — both the Drive key and the signed-link credential are read with it |
+| `DATABASE_URL` | GitHub Actions secret | None until next run — the Drive service-account key is read with it |
 | `DATABASE_URL` | Pages env | Requires a redeploy |
 | GitHub PAT (Actions) | `github_integration` row, via `/admin` | Immediate |
 | Cloudflare RUM token | `cloudflare_integration` row | Immediate, cache may serve stale numbers until it expires |
 
-### The InstaRevision signing credential
+### The retired InstaRevision signing credential
 
-`upload.extramarks.com/getSignedUrl` takes the pair as **HTTP Basic** and mints a GCS V4 signed URL for whatever `folderPath` it is handed. Nothing in the credential itself limits which paths those are, so holding it is effectively read access to `gs://em_content_private` for any object whose name you can guess — not just the revision notes we embed. It does not grant bucket *listing* (a signed URL is a single object, and the credentials never authenticate against `storage.googleapis.com` directly), but guessing is the only thing standing between the holder and everything else in that bucket.
+There used to be an HTTP Basic pair for `upload.extramarks.com/getSignedUrl` — a signing oracle that minted a GCS V4 URL for whatever `folderPath` it was handed, i.e. effective read access to `gs://em_content_private` for any object whose name you could guess. It was stored in Neon's `insta_revision_integration` row, read only by `scripts/drive-crawl/neon-config.mjs`, and never in this repository's history.
 
-What we know for certain:
+Both the table and the code that read it are gone: the notes are served from the public mirror `gs://emnewcontent`, so nothing needs to be signed. That retires the whole class of failure — there is no expiry to miss and no credential to leak from here.
 
-- The pair is valid: a live call returns `200` plus a `storage.googleapis.com` URL, while a deliberately wrong pair returns `401`.
-- It lives only in Neon's `insta_revision_integration` row and is read only by `scripts/drive-crawl/neon-config.mjs`. Nothing in `src/` touches it, and it is not in the client bundle.
-- It is **not** in this repository's history. The script once carried the header as a literal while the repo was public, but the current history starts at one squashed base commit and no reachable object contains the string (`git log --all -S…` and a `git grep` over every reachable tree both come back empty). So git is not the leak vector — copies outside git are the thing to assume: old working trees, local `.env` files, CI logs, screenshots, chat.
-- Treat the value as compromised anyway. "Not in git" makes the exposure smaller, not safe: the credential is unscoped and whoever has it reads the bucket.
+Two things outlive the code and are still worth knowing:
 
-Do not probe it. Fetching objects that are not ours — even "just to see how bad it is" — is unauthorised access to a third party's storage, and it is the kind of thing that ends a partnership. The only legitimate calls are the ones the pipeline already makes, for paths listed in `src/data/insta-revision-sources.json`.
-
-The right fix is upstream: tell Extramarks that the pair they issued signs arbitrary `folderPath` values in `gs://em_content_private`, and ask for a credential scoped to a per-partner prefix, shorter expiries, and rotation. Until they do, the exposure is theirs to accept.
+- **The pair itself may still exist outside git.** Anything that held it — an old working tree, a local `.env`, a CI log, a screenshot, a chat thread — should still be treated as a leaked credential until Extramarks confirms it was revoked. `DROP TABLE` removes our copy, not theirs.
+- **Do not probe the bucket.** Fetching objects that are not ours, "just to see how bad it is", is unauthorised access to a third party's storage. The only legitimate reads are the URLs the app itself serves, for paths listed in `src/data/insta-revision-sources.json`.
 
 ## Known follow-ups
 
-- The InstaRevision signing credential is not ours to rotate and is not scoped to us. It is the one upstream dependency whose blast radius we cannot shrink from here — see [the credential note](#the-insta-revision-signing-credential) above.
+- The public mirror `gs://emnewcontent` is an upstream convenience, not a contract: Extramarks could stop mirroring a path at any time, and the notes for that chapter would 403 while the private object stays fine. See [the retired credential note](#the-retired-insta-revision-signing-credential).
 - `public/_redirects` and `src/lib/redirects.ts` duplicate the two destinations by nature (one is static). Keep them in sync; they are two lines each.
 - Dataset JSON files are large enough that GitHub diffs are unreadable. Trust the `--stat` summary in the run log, not the file diff.

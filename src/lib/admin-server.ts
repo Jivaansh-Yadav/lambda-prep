@@ -1851,8 +1851,8 @@ export type DatasetUpdateOverviewResult =
 
 /**
  * Everything the panel needs on mount: the newest run (so a page reload
- * re-attaches to a run that's already going, or shows the weekly cron's
- * result), plus a short history list. Replaces the old behaviour where the
+ * re-attaches to a run that's already going, or shows the newest finished
+ * run), plus a short history list. Replaces the old behaviour where the
  * tracker only existed in React state for the tab that dispatched it.
  */
 export const getDatasetUpdateOverview = createServerFn({ method: "POST" })

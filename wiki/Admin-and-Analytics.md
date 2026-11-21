@@ -74,7 +74,7 @@ Share links look like `https://lambda-prep.pages.dev/?utm_source=reddit&utm_medi
 
 The part worth reading twice.
 
-`update-resources.yml` runs weekly. GitHub's API exposes **step status while a run is in flight**, but job logs only after it finishes. So the workflow is split into `[Category]`-tagged steps, and `src/lib/workflow-progress.ts` turns that flat step list into a grouped, friendly view.
+`update-resources.yml` runs on demand (the panel’s “Update resource datasets” button); there is no cron any more. GitHub’s API exposes **step status while a run is in flight**, but job logs only after it finishes. So the workflow is split into `[Category]`-tagged steps, and `src/lib/workflow-progress.ts` turns that flat step list into a grouped, friendly view.
 
 ### Categories
 
@@ -83,7 +83,7 @@ The part worth reading twice.
 | `setup` | Setup | checkout, Node, Python, Drive credentials, crawl deps |
 | `crawl` | Drive crawl | the Drive tree walk |
 | `datasets` | Datasets | transform, split, sort, count |
-| `instarevision` | InstaRevision | re-signing the 7-day PDF links |
+| `instarevision` | InstaRevision | re-applying the public revision-note links |
 | `commit` | Commit | secret cleanup, diff summary, commit + push |
 | `runner` | Runner | GitHub's own “Set up job” / “Complete job” / `Post …` steps |
 | `other` | Other | any step whose name lost its tag |
@@ -92,7 +92,7 @@ The `[Tag]` prefix wins; a light alias table (`crawl`/`drive`, `datasets`/`data`
 
 ### What the panel does
 
-1. On mount it attaches to the **newest run**, whether the admin started it or the scheduler did — so a Monday refresh is visible without anyone clicking anything.
+1. On mount it attaches to the **newest run**, whether the admin started it or it came from an earlier session — so a run started on another device is visible without clicking anything.
 2. It polls every **3 seconds** while a run is live, and re-renders once a second locally so elapsed time and step durations tick between polls.
 3. It shows an overall progress bar, elapsed time, and an estimate of time remaining derived from completed categories, then expands into per-category rows with per-step durations and status.
 4. Failure rolls up: any failed step marks its category failed, and a cancelled run does not masquerade as success.
@@ -110,7 +110,7 @@ The PAT only needs **Actions: Read and write** plus **Contents: Read**, scoped t
 
 ## Other admin surfaces
 
-- **Manage resources** — a live Drive browser rooted at `drive_integration.folder_id` (not the committed JSON), with upload into the current folder, rename, and delete-to-trash. Folder/file ids are validated (`isDriveId`) before any write, and failed uploads report the Drive API's reason. It does not change which folder the weekly crawl starts from.
+- **Manage resources** — a live Drive browser rooted at `drive_integration.folder_id` (not the committed JSON), with upload into the current folder, rename, and delete-to-trash. Folder/file ids are validated (`isDriveId`) before any write, and failed uploads report the Drive API's reason. It does not change which folder the crawl starts from.
 - **Resource stats** — the same 24h/7d/14d/30d selector, scoping all four tabs (ratings, feedback, views, shares) to "files active in this window". Read from the same `resource_*` tables the public counters write, with two honest limits: the window selects rows from day buckets, so 24h means today so far (IST), and shares only keep a running total plus `last_shared_at`, so the count stays all-time and is labelled as such. A window that has no activity says so instead of falling back to all-time numbers.
   - **Every list opens on its time column, newest first** — Views → Last viewed, Ratings → Last rated, Feedback → Submitted, Shares → Last shared — so the file someone just touched is the file at the top, with no click.
   - **Every header is a toggle.** File, counts, averages and timestamps sort on first click (descending) and flip to ascending on the second; the active column shows a solid arrow, the rest a faint one, and `aria-sort` carries the state to screen readers. Comparators live in `src/lib/table-sort.ts` so the edge cases are testable rather than buried in JSX: a null sinks to the bottom **in both directions** (a file with no timestamp should never out-rank one touched a minute ago), names compare case-insensitively with numbers in order (`Chapter 2` before `Chapter 10`), and views fall back to a day bucket when a row predates exact timestamps.

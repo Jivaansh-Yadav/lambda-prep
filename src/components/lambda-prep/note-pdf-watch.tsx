@@ -13,16 +13,15 @@ interface NotePdfWatchProps {
   notes: LessonLink[];
   active: LessonLink;
   onSelect: (note: LessonLink) => void;
-  /** Fully-qualified, directly-shareable URL for the active note (includes
-   * a `?note=<index>` deep-link param — the signed PDF links themselves
-   * expire, so they're never used as the share target). */
+  /** Fully-qualified, directly-shareable URL for the active note (the
+   * `?class=...&subject=...&chapter=...&note=<index>` deep link, not the raw
+   * bucket URL, so a share keeps working if the PDF moves in the bucket). */
   shareUrl: string;
 }
 
-/** Revision notes are direct, signed GCS PDF URLs (refreshed weekly, valid
- * ~7 days) rather than Drive file ids, so unlike ResourceWatch this embeds
- * the PDF straight in an iframe instead of going through Drive's
- * `/file/d/<id>/preview` viewer. Most modern browsers render a PDF URL
+/** Revision notes are direct, permanent public-bucket PDF URLs rather than
+ * Drive file ids, so unlike ResourceWatch this embeds the PDF straight in an
+ * iframe instead of going through Drive's `/file/d/<id>/preview` viewer. Most modern browsers render a PDF URL
  * natively inside an iframe without any extra viewer chrome needed. */
 export function NotePdfWatch({ notes, active, onSelect, shareUrl }: NotePdfWatchProps) {
   const { t } = useI18n();
@@ -32,7 +31,7 @@ export function NotePdfWatch({ notes, active, onSelect, shareUrl }: NotePdfWatch
   // reader who dimmed a worksheet doesn't get a white page back when they
   // open a notes PDF.
   const [inverted, toggleInverted] = usePersistedFlag(PDF_INVERT_STORAGE_KEY);
-  // A signed PDF still takes a moment (and a large one longer than that) to
+  // A large PDF still takes a moment (and a large one longer than that) to
   // arrive, and a blocked/failed request otherwise leaves a blank panel.
   const frame = useFrameLoad(active.link);
 
@@ -71,7 +70,7 @@ export function NotePdfWatch({ notes, active, onSelect, shareUrl }: NotePdfWatch
             <a className="doxx-sandbox-fullscreen" href={active.link} target="_blank" rel="noreferrer" aria-label={t('resources.watch.openPdf')} title={t('resources.watch.openPdf')}>
               <ExternalLink size={16} />
             </a>
-            {/* The signed URLs are served `inline`; `download` is what asks the
+            {/* The bucket serves these PDFs `inline`; `download` is what asks the
                 browser to save instead of open. Browsers that ignore it for a
                 cross-origin link still open the PDF in a tab with its own save
                 control, so the button never becomes a dead end. */}

@@ -54,7 +54,7 @@ describe("categorizeStep", () => {
       key: "crawl",
       displayName: "Crawl Google Drive folder tree",
     });
-    expect(categorizeStep("[InstaRevision] Refresh signed PDF links").key).toBe("instarevision");
+    expect(categorizeStep("[InstaRevision] Apply public revision-note links").key).toBe("instarevision");
     expect(categorizeStep("[Datasets] Count resources across all datasets").key).toBe("datasets");
   });
 

@@ -4,7 +4,7 @@
 - [Architecture](Architecture)
 - [Resource Search](Resource-Search)
 - [Resource Pipeline](Resource-Pipeline)
-- [Doxxmarks & Signed Links](Doxxmarks-and-Signed-Links)
+- [Doxxmarks & Revision Notes](Doxxmarks-and-Revision-Notes)
 - [Admin & Analytics](Admin-and-Analytics)
 - [Database](Database)
 - [Deployment](Deployment)
