@@ -146,6 +146,7 @@ function SandboxedFrame({ src, title, shareUrl }: { src: string; title: string; 
         slow={frame.isSlow}
         openHref={src}
         openLabel={t('resources.watch.openActivity')}
+        variant="activity"
       />
       <div className="resource-pdf-toolbar">
         <button

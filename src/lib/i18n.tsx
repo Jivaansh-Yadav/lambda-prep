@@ -134,6 +134,17 @@ const en: Dict = {
   'resources.watch.openActivity': 'Open activity in a new tab',
   'resources.watch.download': 'Download',
   'resources.watch.loadingPreview': 'Loading preview\u2026',
+  // The rotating caption under the loading skeleton. Each one names a step the
+  // embedded viewer plausibly goes through, so a slow load reads as progress
+  // rather than as a hung page.
+  'resources.watch.loadingRendering': 'Rendering the pages',
+  'resources.watch.loadingOptimising': 'Optimising the file',
+  'resources.watch.loadingEncrypting': 'Encrypting the resource content',
+  'resources.watch.loadingPolishing': 'Polishing for your device',
+  'resources.watch.loadingBooting': 'Booting the activity',
+  'resources.watch.loadingPlayback': 'Optimising playback',
+  'resources.watch.loadingControls': 'Preparing the controls',
+  'resources.watch.loadingAlmost': 'Almost ready',
   // Shown over an embedded viewer that has stayed blank long enough to be
   // blocked; always followed by the direct-open label.
   'resources.watch.notLoading': 'Not loading?',
