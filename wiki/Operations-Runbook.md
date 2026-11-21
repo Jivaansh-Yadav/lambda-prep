@@ -5,7 +5,7 @@
 | Cadence | What happens | Who |
 | --- | --- | --- |
 | When Drive content changes | `/admin` → Update resource datasets: re-crawls Drive, rebuilds datasets, re-applies revision-note links, commits, and Pages redeploys | creator, manual |
-| Nothing on a timer | No workflow cron, no expiring links, no rotating secret — an idle week is supposed to be silent | — |
+| Daily, 02:23 UTC | The same workflow on a cron, so a Drive edit ships without anyone pressing the button. No upstream change means no commit, so an idle day is silent | GitHub Actions |
 | When the Doxxmarks folder tree changes | `node scripts/drive-crawl/discover-insta-revision-sources.mjs`, review the diff to `src/data/insta-revision-sources.json`, commit | creator, manual |
 
 ## Health check (2 minutes)

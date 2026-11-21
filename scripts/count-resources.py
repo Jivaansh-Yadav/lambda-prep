@@ -107,10 +107,12 @@ def main():
             print(f'{source}/{class_slug}: {counts["total"]} files '
                   f'({len(counts["subjects"])} subjects, {counts["misc"]} misc)')
 
-    output = {'generatedAt': None, 'grandTotal': grand_total, 'bySource': result}
-    # Stamp a UTC timestamp without relying on an extra import at module load.
-    import datetime
-    output['generatedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    # Deliberately no "generatedAt" stamp: this file is committed by the
+    # pipeline, and a timestamp makes every run a diff — which would turn the
+    # daily cron into a daily empty commit plus a daily deploy. The file is now a
+    # pure function of the datasets, so `git diff --cached --quiet` in the
+    # workflow really means "nothing changed upstream".
+    output = {'grandTotal': grand_total, 'bySource': result}
 
     with open(OUT_PATH, 'w') as f:
         json.dump(output, f, ensure_ascii=False, indent=2)

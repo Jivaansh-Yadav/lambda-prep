@@ -198,7 +198,7 @@ export async function getWorkflowRunStatus(
 
 /** Most recent run of the configured workflow, whatever triggered it
  * (schedule or a manual dispatch) — lets the admin panel attach to a run
- * that was started before the page was opened, or by the weekly cron. */
+ * that was started before the page was opened, or by the daily cron. */
 export async function getLatestWorkflowRun(
   config: GithubIntegrationConfig
 ): Promise<WorkflowRunStatus | null> {

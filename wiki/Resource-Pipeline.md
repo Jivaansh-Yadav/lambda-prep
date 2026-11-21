@@ -102,7 +102,7 @@ In CI the orchestrator is **not** used. `.github/workflows/update-resources.yml`
 
 `.github/workflows/update-resources.yml`
 
-- **Trigger:** `workflow_dispatch` only — there is no cron. Nothing in the datasets expires any more (revision notes are plain public-bucket URLs), so a run is only worth starting when Drive content actually changed. The admin panel's “Update resource datasets” button is the normal entry point.
+- **Trigger:** `workflow_dispatch` (the admin panel's “Update resource datasets” button) **plus a daily cron at 02:23 UTC**. Nothing in the datasets expires, so the cron is not a freshness requirement — it just means a Drive edit lands on the site by itself within a day instead of waiting for someone to press the button. The minute is off the hour on purpose: GitHub queues `:00` cron requests behind each other and delays them most at peak times. A run whose crawl output is byte-identical to the committed datasets commits nothing (see the deterministic-counts note below).
 - **Permissions:** `contents: write` (the job commits), nothing else.
 - **Concurrency:** group `update-resource-datasets`, `cancel-in-progress: false` — two crawls racing the same generated files would conflict and the second push would be rejected after a full run.
 - **Timeout:** `30` minutes. A hung Drive crawl used to be able to burn GitHub's 6-hour default.
@@ -113,10 +113,12 @@ In CI the orchestrator is **not** used. `.github/workflows/update-resources.yml`
 ```bash
 git add src/data
 if git diff --cached --quiet; then echo "No dataset changes — nothing to commit."
-else git commit -m "chore: regenerate resource datasets [skip ci]" && git push; fi
+else git commit -m "chore: regenerate resource datasets" && git push; fi
 ```
 
-`[skip ci]` stops the dataset commit from triggering a second workflow run.
+No `[skip ci]` in that message, deliberately. Cloudflare Pages treats `[skip ci]` (and `[CI Skip]`, `[CF-Pages-Skip]`) as "don't build this commit", which would leave the freshly regenerated datasets out of production. The guard against a commit loop is structural instead: this workflow has no `push` trigger, so the bot's own commit cannot start it again.
+
+**Deterministic outputs.** Everything the run writes under `src/data` is a pure function of the crawl, with one deliberate exception removed: `scripts/count-resources.py` used to stamp a `generatedAt` timestamp into `resource-counts.json`, which made every run a diff even when Drive had not changed. With a daily cron that would have meant a daily empty commit plus a daily Pages rebuild. The file now carries no timestamp (nothing read it — `git log` is the provenance), so a quiet day genuinely produces no commit.
 
 ## Failure modes and what they mean
 
