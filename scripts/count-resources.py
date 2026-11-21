@@ -109,8 +109,8 @@ def main():
 
     # Deliberately no "generatedAt" stamp: this file is committed by the
     # pipeline, and a timestamp makes every run a diff — which would turn the
-    # daily cron into a daily empty commit plus a daily deploy. The file is now a
-    # pure function of the datasets, so `git diff --cached --quiet` in the
+    # weekly cron into an empty commit and a pointless redeploy. The file is now
+    # a pure function of the datasets, so `git diff --cached --quiet` in the
     # workflow really means "nothing changed upstream".
     output = {'grandTotal': grand_total, 'bySource': result}
 

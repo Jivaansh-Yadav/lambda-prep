@@ -74,7 +74,7 @@ Share links look like `https://lambda-prep.pages.dev/?utm_source=reddit&utm_medi
 
 The part worth reading twice.
 
-`update-resources.yml` runs on demand (the panel’s “Update resource datasets” button) and once a day on a cron, so the panel is a “run it now” control rather than the only way to refresh. GitHub’s API exposes **step status while a run is in flight**, but job logs only after it finishes. So the workflow is split into `[Category]`-tagged steps, and `src/lib/workflow-progress.ts` turns that flat step list into a grouped, friendly view.
+`update-resources.yml` runs on demand (the panel’s “Update resource datasets” button) and every Monday on a cron, so the panel is a “run it now” control rather than the only way to refresh. GitHub’s API exposes **step status while a run is in flight**, but job logs only after it finishes. So the workflow is split into `[Category]`-tagged steps, and `src/lib/workflow-progress.ts` turns that flat step list into a grouped, friendly view.
 
 ### Categories
 

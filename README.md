@@ -70,7 +70,7 @@ Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the a
 
 ## The pipeline
 
-`.github/workflows/update-resources.yml` runs once a day on a cron and on demand from the admin panel. Every step name carries a `[Category]` tag, which is what turns a flat Actions log into the grouped progress view inside the dashboard.
+`.github/workflows/update-resources.yml` runs every Monday on a cron and on demand from the admin panel. Every step name carries a `[Category]` tag, which is what turns a flat Actions log into the grouped progress view inside the dashboard.
 
 ```
 [Setup]         checkout · node · python · Drive credentials · crawl deps
@@ -164,7 +164,7 @@ Add `VITE_CF_BEACON_TOKEN` to the host's build environment (not just locally) if
 | [Database](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Database) | Tables, counter semantics, cache tables, degraded mode |
 | [Deployment](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Deployment) | Cloudflare Pages build, headers, env vars, DNS |
 | [SEO-and-Short-Links](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/SEO-and-Short-Links) | Canonical URL, sitemap route, OG images, `/drive` + `/github` |
-| [Operations-Runbook](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Operations-Runbook) | The daily and on-demand refresh, what breaks and how to fix it |
+| [Operations-Runbook](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Operations-Runbook) | The weekly and on-demand refresh, what breaks and how to fix it |
 | [Contributing](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Contributing) | Local setup, conventions, test expectations |
 
 ---

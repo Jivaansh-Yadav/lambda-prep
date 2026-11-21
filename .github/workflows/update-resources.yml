@@ -4,11 +4,12 @@ name: Update resource datasets
 # transform/split/sort/count datasets, re-applies the InstaRevision revision-note
 # links, and commits the regenerated JSON datasets back to the repo.
 #
-# Runs once a day (02:23 UTC) and on demand: the admin panel's "Update resource
-# datasets" button dispatches it with workflow_dispatch. Nothing in the datasets
-# expires, so the cron exists only to pick up Drive content that changed without
-# anyone pressing the button. A run with no upstream changes commits nothing —
-# see the deterministic-counts note in scripts/count-resources.py.
+# Runs every Monday (03:23 UTC) and on demand: the admin panel's "Update
+# resource datasets" button dispatches it with workflow_dispatch. Nothing in the
+# datasets expires, so the cron is not a freshness requirement — it just means a
+# Drive edit reaches the site without anyone pressing the button. A run with no
+# upstream changes commits nothing — see the deterministic-counts note in
+# scripts/count-resources.py.
 #
 # Every step name starts with a "[Category]" tag. The admin panel groups
 # steps by that tag and shows live per-category progress while a run is in
@@ -18,9 +19,9 @@ name: Update resource datasets
 on:
   workflow_dispatch: {}
   schedule:
-    # 02:23 UTC — deliberately off the hour: GitHub queues scheduled runs behind
-    # cron jobs requested at :00, and delays them most around peak times.
-    - cron: "23 2 * * *"
+    # Monday 03:23 UTC — deliberately off the hour: GitHub queues scheduled runs
+    # behind cron jobs requested at :00, and delays them most around peak times.
+    - cron: "23 3 * * 1"
 
 permissions:
   contents: write

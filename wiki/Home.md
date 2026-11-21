@@ -12,7 +12,7 @@ The repository README is the summary. This wiki is the detailed reference: one p
 
 ```
 Google Drive root
-  └── GitHub Actions run (daily cron + dispatched from /admin)
+  └── GitHub Actions run (weekly cron + dispatched from /admin)
         ├── crawl       → scripts/drive-crawl/output/<class>/{cisce,community}.json
         ├── transform   → src/data/resources-{cisce,community}-<class>.json (+ shards)
         ├── notes       → doxxmarks_resources.json  (public bucket URLs)
