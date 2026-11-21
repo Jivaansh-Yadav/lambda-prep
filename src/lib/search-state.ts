@@ -96,20 +96,31 @@ export function writeStoredFilters(key: string, filters: AdvancedSearchFilters):
  * The first render always uses defaults (the server has no storage), then an
  * effect swaps in whatever was stored. `skipSave` keeps that restore pass from
  * writing the defaults back over the very entry it is reading.
+ *
+ * `restore: false` opts a slot out of the restore entirely and drops any stored
+ * entry for it. The library uses this when the URL carries no `q`: a bare
+ * `/resources` must open untouched, not with whatever was searched last time.
  */
 export function usePersistedFilters(
   key: string,
+  { restore = true }: { restore?: boolean } = {},
 ): [AdvancedSearchFilters, Dispatch<SetStateAction<AdvancedSearchFilters>>] {
   const [filters, setFilters] = useState<AdvancedSearchFilters>(createDefaultFilters);
   const skipSaveFor = useRef<string | null>(key);
 
   useEffect(() => {
+    if (!restore) {
+      // Writing defaults removes the entry (see writeStoredFilters), so a
+      // later restore attempt has nothing stale to pick up.
+      writeStoredFilters(key, createDefaultFilters());
+      return;
+    }
     const stored = readStoredFilters(key);
     // Mark this key as "restoring" so the save effect ignores the defaults of
     // the render that triggered the read.
     skipSaveFor.current = key;
     setFilters(stored ?? createDefaultFilters());
-  }, [key]);
+  }, [key, restore]);
 
   useEffect(() => {
     if (skipSaveFor.current === key) {

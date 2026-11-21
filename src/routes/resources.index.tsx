@@ -107,7 +107,17 @@ function Resources() {
   // Facets (and the query) are mirrored into sessionStorage so returning to
   // the library — Back from a file, a tab reload — lands on the same filtered
   // list instead of a blank search (GH #12).
-  const [filters, setFilters] = usePersistedFilters('library');
+  //
+  // The query itself is *not* taken from storage: `?q=` is the only thing that
+  // can put the library into a searched state. A bare `/resources` (the
+  // "Explore resources" CTA, the nav link, Back to the library) therefore opens
+  // untouched instead of replaying last session's search — decided once, on
+  // mount, because the same route can be re-entered with a fresh search.
+  const [restoreStoredSearch] = useState(() => Boolean(urlQuery));
+  const [filters, setFilters] = usePersistedFilters('library', { restore: restoreStoredSearch });
+  // The address bar is written to only once the query above has been applied,
+  // so the first paint's empty defaults can't strip `?q=` off an incoming link.
+  const [urlSynced, setUrlSynced] = useState(false);
   const [corpusRequested, setCorpusRequested] = useState(false);
   const [libraryHits, setLibraryHits] = useState<ResourceSearchHit[] | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -163,13 +173,19 @@ function Resources() {
   // a file view, so pressing Back returns to the same result list instead of an
   // empty library page. It is also how the header quick search arrives here, so
   // this has to react to a new value, not just the first render.
-  const hydratedFromUrl = useRef(false);
   useEffect(() => {
-    if (!urlQuery) return;
-    hydratedFromUrl.current = true;
-    setFilters(current => (current.query === urlQuery ? current : { ...current, query: urlQuery }));
-    setCorpusRequested(true);
+    if (urlQuery) {
+      setFilters(current => (current.query === urlQuery ? current : { ...current, query: urlQuery }));
+      setCorpusRequested(true);
+      return;
+    }
+    // Losing `q` (a link back to the bare library, the CTA re-render) has to
+    // take the results with it — otherwise the page keeps showing matches for
+    // a term the URL no longer mentions.
+    setFilters(current => (hasActiveSearchOrFilters(current) ? createDefaultFilters() : current));
   }, [urlQuery, setFilters]);
+
+  useEffect(() => setUrlSynced(true), []);
 
   // Same-route quick search: navigating to /resources?q= when the library is
   // already mounted can resolve to identical router state (searching the same
@@ -178,7 +194,6 @@ function Resources() {
     function onQuickSearch(event: Event) {
       const term = (event as CustomEvent<string>).detail;
       if (typeof term !== 'string' || !term.trim()) return;
-      hydratedFromUrl.current = true;
       setFilters(current => ({ ...current, query: term }));
       setCorpusRequested(true);
     }
@@ -192,14 +207,22 @@ function Resources() {
     if (hasActiveSearchOrFilters(filters)) setCorpusRequested(true);
   }, [filters]);
 
+  // Mirror the term into `?q=` on every change — including the first keystroke
+  // after landing on a bare URL, which is what makes the query shareable and
+  // keeps the page refreshable. Nothing else in the URL is touched, so
+  // class/subject/file params survive.
   useEffect(() => {
-    if (!hydratedFromUrl.current) return;
+    if (!urlSynced) return;
     const url = new URL(window.location.href);
     const trimmed = filters.query.trim();
+    const inUrl = url.searchParams.get('q') ?? '';
+    if (trimmed === inUrl) return;
     if (trimmed) url.searchParams.set('q', trimmed);
     else url.searchParams.delete('q');
-    window.history.replaceState(window.history.state, '', url);
-  }, [filters.query]);
+    if (url.href !== window.location.href) {
+      window.history.replaceState(window.history.state, '', url);
+    }
+  }, [filters.query, urlSynced]);
 
   return (
     <main className="container content-page">
