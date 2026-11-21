@@ -1,5 +1,5 @@
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
-import { Menu, X, Home, BookOpen, ChevronDown, FileStack, MonitorPlay, Search, Sun, Moon, HeartHandshake, Mail, CheckCircle2, Loader2 } from 'lucide-react';
+import { Menu, X, Home, BookOpen, ChevronDown, FileStack, MonitorPlay, Search, Sun, Moon, HeartHandshake, Mail, CheckCircle2, Loader2, ArrowUpRight, Clock, CornerDownLeft, ShieldCheck, Sparkles, UsersRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,13 @@ import { classes } from '@/lib/lambda-prep';
 import { useI18n } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme';
 import { submitContactMessage } from '@/lib/contact-server';
+import {
+  clearRecentSearches,
+  loadRecentSearches,
+  RECENT_SEARCHES_EVENT,
+  removeRecentSearch,
+  saveRecentSearch,
+} from '@/lib/recent-searches';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,11 +51,20 @@ function ThemeToggle() {
     </button>
   );
 }
+/** Seed queries shown until the reader has recent searches of their own. */
+const STARTER_TERMS = ['Sample papers', 'Previous year papers', 'Revision notes'] as const;
+
 /**
  * Header search: a compact trigger plus the Ctrl/⌘+K shortcut, both opening
  * the same dialog. Submitting hands the term to the resource library through
  * `?q=` (and a same-route event, see resources.index.tsx) instead of building
  * a second, parallel search UI in the header.
+ *
+ * Layout: a centred card from 641px up, a bottom sheet below that. On a phone
+ * the keyboard shrinks the *visual* viewport while the layout viewport stays
+ * put, so a vertically centred box ends up wedged under the top edge with the
+ * form clipped and nothing scrollable — hence the sheet anchoring (see
+ * `.quick-search-dialog` in styles.css) and the sheet owning the scroll.
  */
 function QuickSearch() {
   const { t } = useI18n();
@@ -56,6 +72,22 @@ function QuickSearch() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [recent, setRecent] = useState<string[]>([]);
+
+  // Recent terms live in localStorage, so they are read after mount (there is
+  // no storage during SSR) and re-read whenever another surface — the library
+  // search bar uses the same key — writes to it.
+  useEffect(() => {
+    if (!open) return;
+    const sync = () => setRecent(loadRecentSearches());
+    sync();
+    window.addEventListener(RECENT_SEARCHES_EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(RECENT_SEARCHES_EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, [open]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -80,16 +112,21 @@ function QuickSearch() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const term = query.trim();
-    if (!term) return;
+  function runSearch(term: string) {
+    const trimmed = term.trim();
+    if (!trimmed) return;
+    setRecent(saveRecentSearch(trimmed));
     setOpen(false);
     setQuery('');
     if (pathname === '/resources') {
-      window.dispatchEvent(new CustomEvent('lambda-prep:quick-search', { detail: term }));
+      window.dispatchEvent(new CustomEvent('lambda-prep:quick-search', { detail: trimmed }));
     }
-    navigate({ to: '/resources', search: { q: term } });
+    navigate({ to: '/resources', search: { q: trimmed } });
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    runSearch(query);
   }
 
   return (
@@ -105,23 +142,137 @@ function QuickSearch() {
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="quick-search-dialog">
-          <DialogHeader>
-            <DialogTitle>{t('nav.search')}</DialogTitle>
-            <DialogDescription>{t('nav.searchHint')}</DialogDescription>
+          <div className="quick-search-grab" aria-hidden="true" />
+          <DialogHeader className="quick-search-head">
+            <DialogTitle className="quick-search-title">
+              {t('nav.search')}<span className="text-primary">.</span>
+            </DialogTitle>
+            <DialogDescription className="quick-search-hint">{t('nav.searchHint')}</DialogDescription>
           </DialogHeader>
           <form onSubmit={submit} className="quick-search-form">
-            <label className="search-field resource-search">
-              <Search size={18} />
+            <label className="quick-search-field">
+              <Search size={17} className="quick-search-field-icon" aria-hidden="true" />
               <input
                 autoFocus
+                type="search"
+                inputMode="search"
+                enterKeyHint="search"
+                autoComplete="off"
+                spellCheck={false}
                 aria-label={t('nav.searchTitle')}
                 placeholder={t('nav.searchPlaceholder')}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
+              {query && (
+                <button
+                  type="button"
+                  className="quick-search-clear"
+                  aria-label={t('nav.clearQuery')}
+                  onClick={() => setQuery('')}
+                >
+                  <X size={13} aria-hidden="true" />
+                </button>
+              )}
             </label>
-            <Button type="submit" disabled={!query.trim()}>Search</Button>
+            <Button type="submit" className="quick-search-submit" disabled={!query.trim()}>
+              {t('nav.searchSubmit')}
+              <CornerDownLeft size={14} aria-hidden="true" />
+            </Button>
           </form>
+          <div className="quick-search-body">
+            {recent.length > 0 ? (
+              <section className="quick-search-section">
+                <div className="quick-search-section-head">
+                  <h3>
+                    <Clock size={12} aria-hidden="true" />
+                    {t('nav.recentSearches')}
+                  </h3>
+                  <button
+                    type="button"
+                    className="quick-search-section-action"
+                    onClick={() => setRecent(clearRecentSearches())}
+                  >
+                    {t('nav.clearRecent')}
+                  </button>
+                </div>
+                <div className="quick-search-chips">
+                  {recent.map((term) => (
+                    <span key={term} className="quick-search-chip">
+                      <button type="button" className="quick-search-chip-label" onClick={() => runSearch(term)}>
+                        {term}
+                      </button>
+                      <button
+                        type="button"
+                        className="quick-search-chip-remove"
+                        aria-label={`${t('nav.removeRecent')}: ${term}`}
+                        onClick={() => setRecent(removeRecentSearch(term, recent))}
+                      >
+                        <X size={11} aria-hidden="true" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </section>
+            ) : (
+              <section className="quick-search-section">
+                <div className="quick-search-section-head">
+                  <h3>
+                    <Sparkles size={12} aria-hidden="true" />
+                    {t('nav.trySearching')}
+                  </h3>
+                </div>
+                <div className="quick-search-chips">
+                  {STARTER_TERMS.map((term) => (
+                    <span key={term} className="quick-search-chip">
+                      <button
+                        type="button"
+                        className="quick-search-chip-label"
+                        onClick={() => runSearch(term)}
+                      >
+                        {term}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </section>
+            )}
+            <section className="quick-search-section">
+              <div className="quick-search-section-head">
+                <h3>
+                  <ArrowUpRight size={12} aria-hidden="true" />
+                  {t('nav.jumpTo')}
+                </h3>
+              </div>
+              <div className="quick-search-links">
+                <Link to="/resources" className="quick-search-link" onClick={() => setOpen(false)}>
+                  <FileStack size={15} aria-hidden="true" />
+                  <span>{t('nav.quickLibrary')}</span>
+                  <ArrowUpRight size={12} className="quick-search-link-arrow" aria-hidden="true" />
+                </Link>
+                <Link to="/resources/community" className="quick-search-link" onClick={() => setOpen(false)}>
+                  <UsersRound size={15} aria-hidden="true" />
+                  <span>{t('nav.quickCommunity')}</span>
+                  <ArrowUpRight size={12} className="quick-search-link-arrow" aria-hidden="true" />
+                </Link>
+                <Link to="/resources/cisce" className="quick-search-link" onClick={() => setOpen(false)}>
+                  <ShieldCheck size={15} aria-hidden="true" />
+                  <span>{t('nav.quickCisce')}</span>
+                  <ArrowUpRight size={12} className="quick-search-link-arrow" aria-hidden="true" />
+                </Link>
+                <Link to="/doxxmarks" className="quick-search-link" onClick={() => setOpen(false)}>
+                  <MonitorPlay size={15} aria-hidden="true" />
+                  <span>{t('nav.quickDoxxmarks')}</span>
+                  <ArrowUpRight size={12} className="quick-search-link-arrow" aria-hidden="true" />
+                </Link>
+              </div>
+            </section>
+          </div>
+          <div className="quick-search-foot">
+            <span><kbd>/</kbd>{t('nav.searchFootOpen')}</span>
+            <span><kbd>↵</kbd>{t('nav.searchFootSubmit')}</span>
+            <span><kbd>esc</kbd>{t('nav.searchFootClose')}</span>
+          </div>
         </DialogContent>
       </Dialog>
     </>
