@@ -85,6 +85,8 @@ Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the a
 
 Fail-fast by design: a failed crawl aborts before anything is transformed, so a dataset is never half-updated. A `concurrency` group stops two runs racing the same files, and a 30-minute job timeout stops a hung crawl burning the default six hours.
 
+The Doxxmarks catalogue (`doxxmarks_resources.json`) is crawled per subject by hand with `scripts/crawl-curriculum.mjs`, not by the workflow — it needs an Extramarks teacher token. `scripts/drive-crawl/sync-doxxmarks-videos.mjs` fills it from the doxxmarks app's own catalogue when the two drift; see [Doxxmarks-and-Revision-Notes](wiki/Doxxmarks-and-Revision-Notes#videos-the-crawl-used-to-lose).
+
 ---
 
 ## Stack
