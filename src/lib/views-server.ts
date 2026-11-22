@@ -8,7 +8,7 @@ import { rateLimitKey } from "./client-ip";
 // ---------------------------------------------------------------------
 // Resource file views: a lean aggregate counter per file (table:
 // resource_views), incremented once per Resource Watch pane load — not a
-// per-event log, matching the existing resource_ratings/resource_feedback
+// per-event log, matching the existing resource_ratings/resource_comments
 // pattern of one small table per concern. There's no sign-in system in
 // this app, so this is a simple "how many times was this file opened"
 // counter, not a unique-visitor count; a viewer reloading the same file

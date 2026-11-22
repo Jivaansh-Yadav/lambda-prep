@@ -9,7 +9,7 @@ import { VirtualFileGrid } from '@/components/lambda-prep/virtual-file-grid';
 import { FrameStatus } from '@/components/lambda-prep/frame-status';
 import { ResourceRatingControl } from '@/components/lambda-prep/resource-rating';
 import { FileRatingBadge } from '@/components/lambda-prep/file-rating-badge';
-import { ResourceFeedbackControl } from '@/components/lambda-prep/resource-feedback';
+import { ResourceCommentsControl } from '@/components/lambda-prep/resource-comments';
 import { ShareWidget } from '@/components/lambda-prep/share-widget';
 import { recordResourceView } from '@/lib/views-server';
 import { formatDayLabel } from '@/lib/time-labels';
@@ -281,7 +281,7 @@ export function ResourceWatch({ groups, active, onSelect, shareUrl }: ResourceWa
           </div>
         )}
         <ResourceRatingControl key={active.id} fileId={active.id} />
-        <ResourceFeedbackControl key={`${active.id}-feedback`} fileId={active.id} />
+        <ResourceCommentsControl key={`${active.id}-comments`} fileId={active.id} />
       </div>
 
       <aside className="doxx-watch-side" aria-label={t('resources.watch.fileList')} style={sideHeight ? { height: sideHeight, maxHeight: sideHeight } : undefined}>

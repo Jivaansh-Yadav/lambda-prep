@@ -935,18 +935,33 @@
  * in the Resource Watch detail pane. Deliberately reuses the same
  * top-border/spacing rhythm as .resource-rating-control so the two read
  * as one connected "tell us what you think" block. */
-.resource-feedback-control { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
-.resource-feedback-label { font-size: 14px; font-weight: 600; color: var(--foreground); }
-.resource-feedback-textarea { width: 100%; resize: vertical; min-height: 64px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--foreground); font: inherit; font-size: 14px; line-height: 1.5; transition: border-color .15s; }
-.resource-feedback-textarea:focus { outline: none; border-color: var(--primary); }
-.resource-feedback-textarea:disabled { opacity: 0.7; cursor: default; }
-.resource-feedback-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.resource-feedback-count { font-size: 12px; color: var(--muted-foreground); }
-.resource-feedback-submit { display: inline-flex; align-items: center; justify-content: center; height: 34px; padding-inline: 16px; border: none; border-radius: 8px; background: var(--primary); color: var(--primary-foreground); font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
-.resource-feedback-submit:hover:not(:disabled) { opacity: 0.9; }
-.resource-feedback-submit:disabled { opacity: 0.5; cursor: default; }
-.resource-feedback-status { display: block; font-size: 12px; color: var(--muted-foreground); }
-.resource-feedback-status:empty { display: none; }
+/* Comments — the file's public thread. The composer sits above the list so the
+ * invitation comes first, and the list is capped with a "Show all" toggle
+ * because the detail pane is narrow and a long thread would push the file list
+ * off screen. */
+.resource-comments { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+.resource-comments-heading { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; font-weight: 600; color: var(--foreground); }
+.resource-comments-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding-inline: 6px; border-radius: 999px; background: var(--muted); color: var(--muted-foreground); font-size: 11px; font-weight: 600; }
+.resource-comments-control { display: flex; flex-direction: column; gap: 8px; }
+.resource-comments-label { font-size: 13px; font-weight: 500; color: var(--muted-foreground); }
+.resource-comments-textarea { width: 100%; resize: vertical; min-height: 64px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--foreground); font: inherit; font-size: 14px; line-height: 1.5; transition: border-color .15s; }
+.resource-comments-textarea:focus { outline: none; border-color: var(--primary); }
+.resource-comments-textarea:disabled { opacity: 0.7; cursor: default; }
+.resource-comments-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.resource-comments-charcount { font-size: 12px; color: var(--muted-foreground); }
+.resource-comments-submit { display: inline-flex; align-items: center; justify-content: center; height: 34px; padding-inline: 16px; border: none; border-radius: 8px; background: var(--primary); color: var(--primary-foreground); font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+.resource-comments-submit:hover:not(:disabled) { opacity: 0.9; }
+.resource-comments-submit:disabled { opacity: 0.5; cursor: default; }
+.resource-comments-status { display: block; font-size: 12px; color: var(--muted-foreground); }
+.resource-comments-status:empty { display: none; }
+.resource-comments-empty { margin: 0; font-size: 13px; color: var(--muted-foreground); }
+.resource-comments-list { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.resource-comment { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); }
+.resource-comment-body { margin: 0; font-size: 13px; line-height: 1.5; color: var(--foreground); white-space: pre-wrap; overflow-wrap: anywhere; }
+.resource-comment-meta { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 11px; color: var(--muted-foreground); }
+.resource-comment-author { font-weight: 600; }
+.resource-comments-more { align-self: flex-start; padding: 0; border: none; background: none; color: var(--primary); font-size: 12px; font-weight: 500; cursor: pointer; }
+.resource-comments-more:hover { text-decoration: underline; }
 
 /* Share widget — trigger button sits in the CTA row (next to fullscreen /
  * open-in-Drive / download), opens a popup with a copiable link and a grid
@@ -1397,10 +1412,16 @@ body.pseudo-fullscreen-open { overflow: hidden; }
    ever seen by the ~1 in 5 items that have no artwork of their own — same box,
    same radius, so a mixed row still lines up. */
 .doxx-thumb { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--subject-fill, var(--muted)); color: var(--subject-ink, var(--muted-foreground)); }
-/* The no-artwork box is a deliberate placeholder, not a failed load: a soft
-   wash and a muted glyph keep it from reading as a broken image. */
+/* The no-artwork box is a deliberate placeholder, not a failed load: the
+   content family's Extramarks template sits underneath as a desaturated,
+   low-opacity texture, the category tone washes over it, and the muted glyph
+   lands on top. Nothing here is a picture of the item, so the tile still reads
+   as "no cover" — it just reads as Extramarks' "no cover" rather than as a
+   broken image. */
 .doxx-thumb:not(.has-image) { background-image: linear-gradient(135deg, color-mix(in oklch, currentColor 10%, transparent), transparent 65%); }
-.doxx-thumb:not(.has-image) .doxx-thumb-icon { opacity: .75; }
+.doxx-thumb-template { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .22; filter: grayscale(1) contrast(1.15); }
+.doxx-thumb:not(.has-image)::after { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, color-mix(in oklch, var(--subject-fill, var(--muted)) 74%, transparent), color-mix(in oklch, var(--subject-fill, var(--muted)) 44%, transparent)); }
+.doxx-thumb:not(.has-image) .doxx-thumb-icon { opacity: .8; position: relative; z-index: 1; }
 .doxx-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .35s ease; }
 .doxx-thumb-icon { display: inline-flex; }
 /* Only the big cover scales its glyph up; playlist and note stubs keep the

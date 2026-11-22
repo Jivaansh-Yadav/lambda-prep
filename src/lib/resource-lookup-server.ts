@@ -1,7 +1,7 @@
 // resource-lookup-server.ts
 //
 // Server-only helper that resolves a Drive file id (as stored in
-// resource_ratings/resource_feedback/resource_views/resource_shares) back
+// resource_ratings/resource_comments/resource_views/resource_shares) back
 // to a human-readable file name + class label, for the admin "Resource
 // stats" panel. Those tables only ever stored the bare Drive file id —
 // fine for the app's own per-file lookups (always scoped to one file at a
@@ -129,7 +129,7 @@ export async function resolveFileLocations(fileIds: readonly string[]): Promise<
 
 /** Whether `fileId` corresponds to a real, indexed resource file (a
  * crawled Drive file) — i.e. something that actually appears somewhere on
- * the public Resources pages. Used to reject ratings/feedback for made-up
+ * the public Resources pages. Used to reject ratings/comments for made-up
  * ids before they're ever written to the database (GH issue #6). */
 export async function isKnownFileId(fileId: string): Promise<boolean> {
   const index = await getIndex();

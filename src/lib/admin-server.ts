@@ -1607,8 +1607,8 @@ export const triggerDatasetUpdate = createServerFn({ method: "POST" })
   });
 
 // ---------------------------------------------------------------------
-// Ratings & Feedback tables: read-only admin views over resource_ratings
-// and resource_feedback (see ratings-server.ts / feedback-server.ts for
+// Ratings & Comments tables: read-only admin views over resource_ratings
+// and resource_comments (see ratings-server.ts / comments-server.ts for
 // the viewer-facing write side). Each row surfaces the Drive file id plus
 // a direct Drive link so an admin can jump straight to the file being
 // rated/discussed without cross-referencing the resource datasets.
@@ -1624,13 +1624,13 @@ export type AdminRatingRow = {
   lastRatedAt: string;
 };
 
-export type AdminFeedbackRow = {
+export type AdminCommentRow = {
   id: number;
   fileId: string;
   fileName: string;
   classLabel: string;
   driveUrl: string;
-  feedback: string;
+  body: string;
   createdAt: string;
 };
 
@@ -1666,16 +1666,16 @@ export type AdminResourceStatsResult =
       /** The window every list below was scoped to. */
       range: AdminRange;
       ratings: AdminRatingRow[];
-      feedback: AdminFeedbackRow[];
+      comments: AdminCommentRow[];
       views: AdminViewRow[];
       shares: AdminShareRow[];
       /** All-time file counts per tab, so a quiet window can be told apart
        * from a panel that never recorded anything. */
-      allTimeFileCounts: Record<"ratings" | "feedback" | "views" | "shares", number>;
+      allTimeFileCounts: Record<"ratings" | "comments" | "views" | "shares", number>;
     }
   | { configured: false; reason: string };
 
-const FEEDBACK_ROW_LIMIT = 200;
+const COMMENT_ROW_LIMIT = 200;
 
 function driveFileUrl(fileId: string): string {
   return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view`;
@@ -1722,13 +1722,13 @@ export const getAdminResourceStats = createServerFn({ method: "POST" })
          ORDER BY count DESC, last_rated_at DESC`,
         [since]
       );
-      const feedbackRows = await sql.query(
-        `SELECT id, file_id, feedback, created_at
-         FROM resource_feedback
+      const commentRows = await sql.query(
+        `SELECT id, file_id, body, created_at
+         FROM resource_comments
          WHERE created_at >= $1::timestamptz
          ORDER BY created_at DESC
          LIMIT $2`,
-        [since, FEEDBACK_ROW_LIMIT]
+        [since, COMMENT_ROW_LIMIT]
       );
       // Day buckets, not timestamps: the window is "today plus the N-1 days
       // before it", where "today" is the IST date the write path files a
@@ -1767,7 +1767,7 @@ export const getAdminResourceStats = createServerFn({ method: "POST" })
       // actually is instead of a bare Drive id.
       const allFileIds = new Set<string>();
       for (const r of ratingRows as Array<{ file_id: string }>) allFileIds.add(r.file_id);
-      for (const r of feedbackRows as Array<{ file_id: string }>) allFileIds.add(r.file_id);
+      for (const r of commentRows as Array<{ file_id: string }>) allFileIds.add(r.file_id);
       for (const r of viewRows as Array<{ file_id: string }>) allFileIds.add(r.file_id);
       for (const r of shareRows as Array<{ file_id: string }>) allFileIds.add(r.file_id);
       const locations = await resolveFileLocations([...allFileIds]);
@@ -1785,15 +1785,15 @@ export const getAdminResourceStats = createServerFn({ method: "POST" })
         lastRatedAt: r.last_rated_at,
       }));
 
-      const feedback: AdminFeedbackRow[] = (
-        feedbackRows as Array<{ id: number; file_id: string; feedback: string; created_at: string }>
+      const comments: AdminCommentRow[] = (
+        commentRows as Array<{ id: number; file_id: string; body: string; created_at: string }>
       ).map((r) => ({
         id: r.id,
         fileId: r.file_id,
         fileName: locate(r.file_id).name,
         classLabel: locate(r.file_id).classLabel,
         driveUrl: driveFileUrl(r.file_id),
-        feedback: r.feedback,
+        body: r.body,
         createdAt: r.created_at,
       }));
 
@@ -1827,16 +1827,16 @@ export const getAdminResourceStats = createServerFn({ method: "POST" })
       const allTimeRows = await sql.query(
         `SELECT
            (SELECT COUNT(DISTINCT file_id) FROM resource_ratings)::int AS ratings,
-           (SELECT COUNT(DISTINCT file_id) FROM resource_feedback)::int AS feedback,
+           (SELECT COUNT(DISTINCT file_id) FROM resource_comments)::int AS comments,
            (SELECT COUNT(*) FROM resource_views WHERE view_count > 0)::int AS views,
            (SELECT COUNT(*) FROM resource_shares WHERE share_count > 0)::int AS shares`
       );
-      const allTimeFileCounts = (allTimeRows[0] ?? { ratings: 0, feedback: 0, views: 0, shares: 0 }) as Record<
-        "ratings" | "feedback" | "views" | "shares",
+      const allTimeFileCounts = (allTimeRows[0] ?? { ratings: 0, comments: 0, views: 0, shares: 0 }) as Record<
+        "ratings" | "comments" | "views" | "shares",
         number
       >;
 
-      return { configured: true, range: data.range, ratings, feedback, views, shares, allTimeFileCounts };
+      return { configured: true, range: data.range, ratings, comments, views, shares, allTimeFileCounts };
     } catch (error) {
       return {
         configured: false,

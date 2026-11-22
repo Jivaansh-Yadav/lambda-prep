@@ -92,7 +92,12 @@ function PlaylistSection({ category, lessons, active, onSelect }: { category: Do
                 aria-current={isActive ? 'true' : undefined}
                 onClick={() => onSelect(lesson)}
               >
-                <DoxxThumb className="doxx-side-thumb" src={lesson.thumb} icon={<Icon size={16} />} />
+                <DoxxThumb
+                  className="doxx-side-thumb"
+                  src={lesson.thumb}
+                  icon={<Icon size={16} />}
+                  template={lesson.category === 'hots' ? 'case' : 'library'}
+                />
                 <span className="doxx-side-name">{lesson.name}</span>
               </button>
             </li>

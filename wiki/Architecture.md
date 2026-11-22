@@ -81,7 +81,7 @@ Because the datasets ship as ES modules they are code-split with the route that 
 
 `loadAllLibraryFiles(classSlugs)` is the one deliberate exception: `/resources` needs all four classes from both sources at once, so it fetches them on the first keystroke and memoises the flat list. The idle page must not call it — see [Resource-Search](Resource-Search).
 
-Server functions (`createServerFn` in `src/lib/*-server.ts`) handle everything that must not trust the client: ratings, views, downloads, shares, contributions, feedback, contact, admin, Drive, GitHub and Cloudflare calls.
+Server functions (`createServerFn` in `src/lib/*-server.ts`) handle everything that must not trust the client: ratings, views, downloads, shares, contributions, comments, contact, admin, Drive, GitHub and Cloudflare calls.
 
 The Trending strip is the one thing on a resource page that is not in those JSON files: `getTrendingFiles` reads the `resource_daily_views` table (see [Database](Database)) and `class-trending.tsx` renders nothing at all when the last week was quiet, so a class with no traffic keeps exactly the page it had before the strip existed.
 
@@ -118,7 +118,7 @@ src/
 │   ├── qr-art.ts             # module grid -> rounded SVG path data
 │   ├── qr-tables.ts          # ISO 18004 block + alignment tables (data only)
 │   └── *-server.ts   # server functions: admin, drive, github, cloudflare,
-│                     # ratings, views, shares, feedback, contact, contribute
+│                     # ratings, views, shares, comments, contact, contribute
 ├── data/             # committed datasets (pipeline output)
 ├── styles.css        # design tokens + component CSS
 └── server.ts         # SSR entry (short links, error normalisation, headers)

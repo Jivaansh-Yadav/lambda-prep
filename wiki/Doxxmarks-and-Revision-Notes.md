@@ -94,7 +94,7 @@ node scripts/drive-crawl/apply-insta-revision-notes.mjs
 
 ## Cover art
 
-Every material carries an optional `thumb` (a plain public image URL, same no-signing rule as the PDFs). Cards render it through `doxx-thumb.tsx`; when `thumb` is absent the card falls back to a tinted icon tile, so a missing cover is a normal state and never a broken image.
+Every material carries an optional `thumb` (a plain public image URL, same no-signing rule as the PDFs). Cards render it through `doxx-thumb.tsx`; when `thumb` is absent the card falls back to a tinted icon tile with that content family's Extramarks template washed in underneath (`public/covers/`), so a missing cover is a normal state and never a broken image.
 
 ```
 apply-doxx-thumbnails.mjs   reads the catalogue Jivaansh-Yadav/doxxmarks publishes
@@ -130,7 +130,7 @@ Current coverage (printed by every run): **3,934 / 6,083 (65%)** — videos 2,68
 
 ### Rendering a cover
 
-`doxx-thumb.tsx` takes `{src, icon, video}`. With no `src` — or a URL that fails to load — it renders the tinted gradient tile with the section's glyph, so a dead CDN link degrades to the same look as a missing cover instead of a broken-image icon. Videos get a play glyph over the still (`className` carries the size: `.doxx-lesson-cover` for cards, `.doxx-side-thumb` in the playlist, `.doxx-note-thumb` in the note row).
+`doxx-thumb.tsx` takes `{src, icon, video, template}`. With no `src` — or a URL that fails to load — it renders the tinted gradient tile with the section's glyph over the `template` backdrop (default `library`; HOTS cards pass `case`), so a dead CDN link degrades to the same look as a missing cover instead of a broken-image icon. The two backdrops are the Extramarks splashes the covers pass discards — optimised to ~640px and committed under `public/covers/`, so they never wait on a hotlink and never show up as the *picture* on a card. Videos get a play glyph over the still (`className` carries the size: `.doxx-lesson-cover` for cards, `.doxx-side-thumb` in the playlist, `.doxx-note-thumb` in the note row).
 
 ### What it costs
 

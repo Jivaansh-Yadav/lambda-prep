@@ -42,7 +42,7 @@ Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the a
 | `/classes/$classId` | One class, its two catalogues, subjects in Featured-first then A–Z order |
 | `/resources` | Browse surface; `/resources/cisce` and `/resources/community` scope it |
 | `/doxxmarks` | Chapter-wise revision-notes library: classes → subjects → chapters → notes |
-| `/contribute` | Student submission form, plus contact and feedback server functions |
+| `/contribute` | Student submission form, plus contact and comment server functions |
 | `/admin` | Passcode-gated dashboard: analytics, dataset pipeline, moderation |
 | `/sitemap.xml` | Real route; a hand-kept entry table (path, priority, `lastmod`), `<loc>` built from `SITE_URL` |
 | `/drive` | 302 → the public Google Drive root |
@@ -60,7 +60,7 @@ Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the a
 - **Doxxmarks player** — chapter lessons and PDF revision notes embedded, with a playlist and a fullscreen-safe toolbar.
 - **Trending strip** — the five most-opened files in a subject, above its grid, filled by widening the window from today out to a week.
 - **Passcode admin** — analytics and resource activity on one 24h/7d/14d/30d selector (24h by default), a live pipeline tracker, Drive folder attachment, contribution and message moderation.
-- **Sortable activity lists** — ratings, views, shares and feedback open on their timestamp, newest first, and every header toggles direction; a row with no timestamp sinks instead of pretending to be the epoch.
+- **Sortable activity lists** — ratings, views, shares and comments open on their timestamp, newest first, and every header toggles direction; a row with no timestamp sinks instead of pretending to be the epoch.
 - **One clock** — chart axes, tooltips, table cells and the Drive file list all print IST from a single module (`time-labels.ts`), so two admins reading the same row see the same minute.
 - **Scan codes** — the share popup draws a QR for the exact link it copies: rounded modules, the brand gradient, the λ mark knocked out of the centre, and a bundled encoder (`qr-code.ts`) rather than a QR dependency.
 - **Bilingual UI** — one i18n module (`en-US`, `zh-CN`); no hardcoded strings in components.

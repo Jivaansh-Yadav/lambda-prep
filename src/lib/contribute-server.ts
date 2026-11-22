@@ -47,7 +47,7 @@ const MAX_CLASS_LABEL_LENGTH = 80;
 const MAX_SUBJECT_LENGTH = 80;
 const MAX_LINK_LENGTH = 512;
 
-// Light per-IP throttle — same shape as the resource-feedback limiter:
+// Light per-IP throttle — same shape as the resource-comments limiter:
 // a brake on casual spam/abuse, not a hard security boundary. In-memory
 // only, resets on deploy/restart.
 const MAX_SUBMISSIONS = 5;

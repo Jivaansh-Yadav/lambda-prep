@@ -19,7 +19,7 @@ That single `null` check is the whole degraded mode: **the catalogue renders, th
 | `resource_views` | `views-server.ts` | Increment per file open |
 | `resource_daily_views` | `views-server.ts` | The same opens, bucketed per `(file_id, day)` — what the Trending strip reads |
 | `resource_shares` | `shares-server.ts` | Increment per share action / copied link |
-| `resource_feedback` | `feedback-server.ts` | “Was this useful?” style notes attached to a file |
+| `resource_comments` | `comments-server.ts` | Public comments on a file — read by every visitor under the star rating, and by the admin Comments table |
 | `resource_contributions` | `contribute-server.ts` | Student-submitted resources, with `status` and `reviewed_at` |
 | `contact_messages` | `contact-server.ts` | Footer contact form, same review shape plus optional social handles |
 
@@ -28,7 +28,7 @@ Design rules that matter:
 - **No bulk seeding.** A file gets a row only after real activity. There is no “0 ratings” row per file, so the table grows with usage, not with dataset size.
 - **Counters increment one column and return the new value**, so the number a student sees is the number everyone sees. A client-side counter is a counter you cannot aggregate or trust.
 - **Ratings are per visitor.** There is no sign-in, so `voter_id` is a random per-browser id in `localStorage` (`voter-id.ts`) — enough to let a student see and change their own rating, and to blunt accidental double submits. It is not an identity guarantee and is not treated as one.
-- **Abuse protection on every public write** (`ratings`, `feedback`, `contact`, `contribute`): a light in-memory per-IP + voter limit (e.g. `10 submissions / 10 minutes` for ratings) plus a validity check that the `file_id` actually exists in the dataset. The limiter resets on deploy and a determined attacker can rotate IPs — it exists to stop naive scripted brigading and junk rows, which is the realistic threat for a school portal.
+- **Abuse protection on every public write** (`ratings`, `comments`, `contact`, `contribute`): a light in-memory per-IP + voter limit (e.g. `10 submissions / 10 minutes` for ratings) plus a validity check that the `file_id` actually exists in the dataset. The limiter resets on deploy and a determined attacker can rotate IPs — it exists to stop naive scripted brigading and junk rows, which is the realistic threat for a school portal.
 - **Editor's Choice** is computed from these rows (`average rating`, minimum count), never from a hand-written list.
 
 ### Daily view buckets

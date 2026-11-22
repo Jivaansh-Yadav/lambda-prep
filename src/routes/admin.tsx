@@ -1930,17 +1930,17 @@ function ManageResourcesCard() {
   );
 }
 
-type StatsTab = 'ratings' | 'feedback' | 'views' | 'shares';
+type StatsTab = 'ratings' | 'comments' | 'views' | 'shares';
 
 const STATS_TABS: Array<{ key: StatsTab; label: string; noun: string; icon: typeof Star }> = [
   { key: 'ratings', label: 'Ratings', noun: 'files', icon: Star },
-  { key: 'feedback', label: 'Feedback', noun: 'responses', icon: MessageSquareText },
+  { key: 'comments', label: 'Comments', noun: 'comments', icon: MessageSquareText },
   { key: 'views', label: 'Views', noun: 'files', icon: Eye },
   { key: 'shares', label: 'Shares', noun: 'files', icon: Share2 },
 ];
 
 /** "Resource stats" panel: a summary row of the four counts (ratings,
- * feedback, views, shares) that opens a modal with one table per
+ * comments, views, shares) that opens a modal with one table per
  * category — each table lists every file active in the selected window
  * plus a direct Drive link, so an admin can jump straight to the file being
  * discussed/rated/viewed/shared. The window defaults to 24h and is the same
@@ -2113,7 +2113,7 @@ function StatsModal({
   const Icon = tabMeta.icon;
 
   const [ratingSort, sortRatings] = useSortState<'file' | 'average' | 'count' | 'last'>('last');
-  const [feedbackSort, sortFeedback] = useSortState<'file' | 'submitted'>('submitted');
+  const [commentSort, sortComments] = useSortState<'file' | 'submitted'>('submitted');
   const [viewSort, sortViews] = useSortState<'file' | 'views' | 'allTime' | 'last'>('last');
   const [shareSort, sortShares] = useSortState<'file' | 'shares' | 'last'>('last');
 
@@ -2123,9 +2123,9 @@ function StatsModal({
     count: (r) => r.count,
     last: (r) => timeValue(r.lastRatedAt),
   });
-  const feedbackRows = sortRows(state.feedback, feedbackSort, {
-    file: (f) => f.fileName,
-    submitted: (f) => timeValue(f.createdAt),
+  const commentRows = sortRows(state.comments, commentSort, {
+    file: (c) => c.fileName,
+    submitted: (c) => timeValue(c.createdAt),
   });
   const viewRows = sortRows(state.views, viewSort, {
     file: (v) => v.fileName,
@@ -2202,34 +2202,34 @@ function StatsModal({
             )
           )}
 
-          {tab === 'feedback' && (
-            state.feedback.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No feedback in the {ADMIN_RANGE_LABEL[state.range]}.</p>
+          {tab === 'comments' && (
+            state.comments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No comments in the {ADMIN_RANGE_LABEL[state.range]}.</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <SortableHead label="File" column="file" sort={feedbackSort} onSort={sortFeedback} />
+                    <SortableHead label="File" column="file" sort={commentSort} onSort={sortComments} />
                     <TableHead>Drive link</TableHead>
-                    <TableHead>Feedback</TableHead>
-                    <SortableHead label="Submitted" column="submitted" sort={feedbackSort} onSort={sortFeedback} />
+                    <TableHead>Comment</TableHead>
+                    <SortableHead label="Submitted" column="submitted" sort={commentSort} onSort={sortComments} />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {feedbackRows.map((f) => (
-                    <Fragment key={f.id}>
-                      <TableRow key={f.id} className="border-b-0">
-                        <TableCell className="max-w-xs truncate" title={f.fileName}>{f.fileName}</TableCell>
+                  {commentRows.map((c) => (
+                    <Fragment key={c.id}>
+                      <TableRow key={c.id} className="border-b-0">
+                        <TableCell className="max-w-xs truncate" title={c.fileName}>{c.fileName}</TableCell>
                         <TableCell>
-                          <a href={f.driveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                          <a href={c.driveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
                             Open <ExternalLink size={13} />
                           </a>
                         </TableCell>
-                        <TableCell className="max-w-sm whitespace-pre-wrap break-words">{f.feedback}</TableCell>
-                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatMomentLabel(f.createdAt)}</TableCell>
+                        <TableCell className="max-w-sm whitespace-pre-wrap break-words">{c.body}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatMomentLabel(c.createdAt)}</TableCell>
                       </TableRow>
-                      <TableRow key={`${f.id}-class`}>
-                        <TableCell colSpan={4} className="pt-0 text-xs text-muted-foreground">{f.classLabel}</TableCell>
+                      <TableRow key={`${c.id}-class`}>
+                        <TableCell colSpan={4} className="pt-0 text-xs text-muted-foreground">{c.classLabel}</TableCell>
                       </TableRow>
                     </Fragment>
                   ))}

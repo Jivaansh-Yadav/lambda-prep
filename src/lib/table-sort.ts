@@ -1,5 +1,5 @@
 /**
- * Sorting for the resource-stats tables (ratings / feedback / views / shares).
+ * Sorting for the resource-stats tables (ratings / comments / views / shares).
  *
  * Comparison is deliberately narrow: numbers compare numerically, everything
  * else compares as a locale string with numeric awareness ("Chapter 2" before

@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------
 // Shared in-memory rate limiter.
 //
-// Every write endpoint (feedback, contributions, contact, campaign, admin
+// Every write endpoint (comments, contributions, contact, campaign, admin
 // passcode attempts) used to carry its own `Map` plus a "is this key over
 // the limit?" helper. Same shape five times, and none of them ever
 // removed an entry: a long-lived instance accumulates one row per IP that

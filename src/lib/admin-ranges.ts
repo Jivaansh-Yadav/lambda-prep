@@ -20,7 +20,7 @@ export function isAdminRange(value: unknown): value is AdminRange {
 }
 
 /** Milliseconds of lookback, for tables keyed by a real timestamp
- * (traffic hours, RUM days, ratings, feedback, shares). */
+ * (traffic hours, RUM days, ratings, comments, shares). */
 export const RANGE_WINDOW_MS: Record<AdminRange, number> = {
   "24h": 24 * 60 * 60 * 1000,
   "7d": 7 * 24 * 60 * 60 * 1000,

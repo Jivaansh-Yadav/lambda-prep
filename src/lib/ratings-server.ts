@@ -24,7 +24,7 @@ import { isKnownFileId } from "./resource-lookup-server";
 // that fileId was a real file, which made it trivial to script thousands
 // of fake votes (brigading) or pollute the table with junk fileIds. Two
 // mitigations, same shape as the other public write endpoints
-// (feedback-server.ts, contact-server.ts, contribute-server.ts):
+// (comments-server.ts, contact-server.ts, contribute-server.ts):
 //   1. A light per-IP+voterId rate limit — not a hard security boundary
 //      (in-memory, resets on deploy/restart, and a determined attacker can
 //      rotate IPs), but it blunts naive scripted brigading from a single

@@ -438,6 +438,7 @@ function Doxxmarks() {
                         src={lesson.thumb}
                         icon={<Icon size={22} strokeWidth={1.8} />}
                         video={lesson.kind === 'video'}
+                        template={lesson.category === 'hots' ? 'case' : 'library'}
                       />
                       <span className="doxx-card-body">
                         <span className="doxx-card-title">{lesson.name}</span>

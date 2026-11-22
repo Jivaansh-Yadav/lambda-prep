@@ -44,7 +44,7 @@ export function normalizeCampaignValue(value: unknown, maxLength: number): strin
 }
 
 // Per-IP brake on the public write, same shape as the other public counters
-// (ratings/feedback/contact): in-memory, resets on deploy, and generous
+// (ratings/comments/contact): in-memory, resets on deploy, and generous
 // enough that a real session — which writes at most once — never hits it.
 const WRITE_WINDOW_MS = 10 * 60 * 1000;
 const MAX_WRITES_PER_WINDOW = 20;
