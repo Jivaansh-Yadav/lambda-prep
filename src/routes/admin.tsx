@@ -521,20 +521,23 @@ function AdminPage() {
 
                 <Card className="mt-6">
                   <CardHeader>
-                    <CardTitle>Visits by section — {ADMIN_RANGE_LABEL[range]}</CardTitle>
+                    <CardTitle>Page views by section — {ADMIN_RANGE_LABEL[range]}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="h-64 sm:h-72">
-                      {result.sections.every((s) => s.visits === 0) ? (
-                        <p className="text-sm text-muted-foreground">No section visits recorded yet.</p>
+                      {result.sections.every((s) => s.pageViews === 0) ? (
+                        <p className="text-sm text-muted-foreground">No page views recorded for these sections yet.</p>
                       ) : (
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={result.sections} layout="vertical" margin={{ left: 16 }}>
                             <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
                             <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} />
-                            <YAxis type="category" dataKey="label" tick={{ fontSize: 12 }} width={90} />
-                            <Tooltip />
-                            <Bar dataKey="visits" name="Visits" radius={4}>
+                            <YAxis type="category" dataKey="label" tick={{ fontSize: 12 }} width={110} />
+                            <Tooltip
+                              formatter={(value: number, name: string) => [value.toLocaleString(), name]}
+                              labelFormatter={(label: string) => label}
+                            />
+                            <Bar dataKey="pageViews" name="Page views" radius={4}>
                               {result.sections.map((s, i) => (
                                 <Cell key={s.path} fill={SECTION_COLORS[i % SECTION_COLORS.length]} />
                               ))}
@@ -543,12 +546,45 @@ function AdminPage() {
                         </ResponsiveContainer>
                       )}
                     </div>
+                    <div className="mt-4 overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                            <th className="py-1 pr-3 font-medium">Section</th>
+                            <th className="py-1 pr-3 text-right font-medium">Page views</th>
+                            <th className="py-1 text-right font-medium">Visits</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {result.sections.map((s) => (
+                            <tr key={s.path} className="border-t border-border/50">
+                              <td className="py-1.5 pr-3">
+                                {s.label} <span className="font-mono text-xs text-muted-foreground">{s.path}</span>
+                              </td>
+                              <td className="py-1.5 pr-3 text-right font-mono">{s.pageViews.toLocaleString()}</td>
+                              <td className="py-1.5 text-right font-mono text-muted-foreground">
+                                {s.visits.toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                     <p className="mt-4 text-xs text-muted-foreground">
-                      Shows top-level visits to <span className="font-mono">/doxxmarks</span> vs{' '}
-                      <span className="font-mono">/resources</span>. Class, subject and chapter choices on these pages
-                      live in the URL's query string (e.g. <span className="font-mono">?class=...&amp;subject=...</span>),
-                      and Cloudflare's analytics path dimension doesn't include query strings — so a subcategory
-                      breakdown isn't available from this data source alone.
+                      <strong className="font-medium text-foreground">Page views</strong> are every load of a page in
+                      that section, which is the number to compare sections by.{' '}
+                      <strong className="font-medium text-foreground">Visits</strong> only count the load that started a
+                      session — a visitor who lands from a shared link and then clicks through the site adds page views
+                      but no visits, so comparing sections by visits made{' '}
+                      <span className="font-mono">/resources</span> look smaller than it is.
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      <span className="font-mono">/classes/&lt;class&gt;</span> is counted as{' '}
+                      <em>Class hubs</em>: the home page's class cards open there and the subject resource lists live on
+                      it, so it is a resource surface even though the path does not start with{' '}
+                      <span className="font-mono">/resources</span>. Class, subject and chapter choices are query
+                      strings (e.g. <span className="font-mono">?class=...&amp;subject=...</span>), which Cloudflare's
+                      path dimension drops, so a finer breakdown isn't available from this data source alone.
                     </p>
                   </CardContent>
                 </Card>
@@ -711,7 +747,7 @@ function AdminPage() {
   );
 }
 
-const SECTION_COLORS = ['#6366f1', '#22c55e'];
+const SECTION_COLORS = ['#6366f1', '#22c55e', '#f59e0b'];
 
 /** Accent color identity shared by every top-level tile (KpiCard,
  * LatestCommitCard, CategoryCard) via the admin-category-card-{accent}

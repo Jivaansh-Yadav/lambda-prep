@@ -35,6 +35,7 @@ import { getCloudflareIntegrationConfig } from "./cloudflare-integration-server"
 import { SITE_URL } from "./lambda-prep";
 import { resolveFileLocations } from "./resource-lookup-server";
 import { chunkWindows, type RumWindow } from "./rum-windows";
+import { buildSections, SECTION_PATH_LIKE, type SectionBreakdownItem } from "./section-breakdown";
 import { BoundedStore } from "./rate-limit";
 import { constantTimeEquals } from "./secure-compare";
 import { clientIp } from "./client-ip";
@@ -210,13 +211,10 @@ const RANGE_BUCKET_LIMIT: Record<AdminRange, number> = {
 // (class/subject/chapter) live in search params on these same routes, and
 // the RUM path dimension strips the query string, so only this top-level
 // split is possible without a custom tracker — see admin.tsx for the
-// user-facing note explaining that limitation.
-const SECTION_DEFS = [
-  { label: "Doxxmarks", prefix: "/doxxmarks" },
-  { label: "Resources", prefix: "/resources" },
-] as const;
-
-export type SectionBreakdownItem = { label: string; path: string; visits: number };
+// user-facing note explaining that limitation. The definitions, the query
+// allowlist and the bucket maths live in section-breakdown.ts so they stay
+// testable and cannot drift apart.
+export type { SectionBreakdownItem } from "./section-breakdown";
 
 export type AdminTrafficResult =
   | {
@@ -290,6 +288,8 @@ function resolveTrackedHost(value: unknown): string {
 // dimension dailyTraffic buckets by: "date" (one point per calendar day)
 // for the 7d/14d/30d ranges, or "datetimeHour" (one point per hour) for
 // 24h, since a single day has too few calendar-day points to chart.
+const sectionPathFilter = `[${SECTION_PATH_LIKE.map((p) => `{ requestPath_like: "${p}" }`).join(", ")}]`;
+
 const TRAFFIC_QUERY_BY_DAY = `
   query GetTrafficData($accountTag: String!, $host: String!, $since: Time!, $until: Time!, $limit: Int!) {
     viewer {
@@ -310,12 +310,10 @@ const TRAFFIC_QUERY_BY_DAY = `
             requestHost: $host,
             datetime_geq: $since,
             datetime_lt: $until,
-            OR: [
-              { requestPath_like: "/doxxmarks%" },
-              { requestPath_like: "/resources%" }
-            ]
+            OR: ${sectionPathFilter}
           }
         ) {
+          count
           sum { visits }
           dimensions { requestPath }
         }
@@ -344,12 +342,10 @@ const TRAFFIC_QUERY_BY_HOUR = `
             requestHost: $host,
             datetime_geq: $since,
             datetime_lt: $until,
-            OR: [
-              { requestPath_like: "/doxxmarks%" },
-              { requestPath_like: "/resources%" }
-            ]
+            OR: ${sectionPathFilter}
           }
         ) {
+          count
           sum { visits }
           dimensions { requestPath }
         }
@@ -394,6 +390,7 @@ type CloudflareGraphQLResponse = {
           sum: { visits: number };
         }>;
         sectionBreakdown?: Array<{
+          count: number;
           sum: { visits: number };
           dimensions: { requestPath: string };
         }>;
@@ -441,9 +438,24 @@ async function readCache(range: AdminRange): Promise<{ payload: CachedPayload; f
     `SELECT payload, fetched_at FROM cloudflare_analytics_cache WHERE range = $1 LIMIT 1`,
     [range]
   );
-  const row = rows[0] as { payload: CachedPayload; fetched_at: string } | undefined;
-  if (!row) return null;
+  const row = rows[0] as { payload: CachedPayload | null; fetched_at: string } | undefined;
+  if (!row || !isCurrentPayload(row.payload)) return null;
   return { payload: row.payload, fetchedAt: new Date(row.fetched_at) };
+}
+
+/**
+ * Rejects a row written by an older build of this query. The section breakdown
+ * gained a `pageViews` figure (and a class-hub section) when the panel stopped
+ * comparing sections by visits; a payload from before that change has neither,
+ * and rendering it would draw empty bars for five minutes after every deploy.
+ * A miss just costs one live Cloudflare read, so the check is deliberately
+ * strict.
+ */
+function isCurrentPayload(payload: CachedPayload | null | undefined): payload is CachedPayload {
+  if (!payload || !Array.isArray(payload.sections) || !Array.isArray(payload.days)) return false;
+  return payload.sections.every(
+    (section) => typeof section?.pageViews === "number" && typeof section?.visits === "number"
+  );
 }
 
 /**
@@ -507,10 +519,7 @@ function visitFallbackQuery(range: AdminRange): string {
           limit: 1000,
           filter: {
             ${VISIT_FILTER},
-            OR: [
-              { requestPath_like: "/doxxmarks%" },
-              { requestPath_like: "/resources%" }
-            ]
+            OR: ${sectionPathFilter}
           }
         ) {
           count
@@ -624,6 +633,10 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
   // in ≤7-day slices and the buckets are summed here.
   const loadsByBucket = new Map<string, number>();
   const visitsByBucket = new Map<string, number>();
+  // Per-path we keep both numbers: `pageViews` is every page load in that
+  // section (the honest "views" figure), `visits` only the loads that started
+  // a session. See section-breakdown.ts for why the panel shows the former.
+  const pageViewsByPath = new Map<string, number>();
   const visitsByPath = new Map<string, number>();
 
   for (const window of windows) {
@@ -669,7 +682,8 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
     }
     for (const row of account?.sectionBreakdown ?? []) {
       const path = row.dimensions.requestPath;
-      visitsByPath.set(path, (visitsByPath.get(path) ?? 0) + row.sum.visits);
+      pageViewsByPath.set(path, (pageViewsByPath.get(path) ?? 0) + row.count);
+      visitsByPath.set(path, (visitsByPath.get(path) ?? 0) + (row.sum?.visits ?? 0));
     }
   }
 
@@ -687,21 +701,17 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
     }
   }
 
-  const pathRows = [...visitsByPath.entries()].map(([requestPath, visits]) => ({
-    sum: { visits },
-    dimensions: { requestPath },
-  }));
-
-  // Bucket raw path rows (one per distinct path) into the two known
-  // top-level sections by prefix match, since the dataset can't group by
-  // prefix itself — only by exact dimension value.
-  const sections: SectionBreakdownItem[] = SECTION_DEFS.map((def) => ({
-    label: def.label,
-    path: def.prefix,
-    visits: pathRows
-      .filter((r) => r.dimensions.requestPath.startsWith(def.prefix))
-      .reduce((sum, r) => sum + r.sum.visits, 0),
-  }));
+  // Bucket raw path rows (one per distinct path) into the known top-level
+  // sections by prefix match, since the dataset can't group by prefix itself —
+  // only by exact dimension value. `visits` rides along for the tooltip; the
+  // bar length and any comparison use page views.
+  const sections: SectionBreakdownItem[] = buildSections(
+    [...new Set([...pageViewsByPath.keys(), ...visitsByPath.keys()])].map((path) => ({
+      path,
+      pageViews: pageViewsByPath.get(path) ?? 0,
+      visits: visitsByPath.get(path) ?? 0,
+    }))
+  );
 
   const days: TrafficDay[] = [...loadsByBucket.entries()]
     .sort(([a], [b]) => a.localeCompare(b))

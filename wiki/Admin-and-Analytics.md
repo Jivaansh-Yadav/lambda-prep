@@ -21,7 +21,7 @@ Two rows, four cards each, colour-coded by intent.
 | Page loads | Cloudflare Web Analytics page loads for the selected range |
 | Visits | Unique visits for the range |
 | Latest commit | `owner/repo@sha` short message — proves what production is running |
-| Deep analytics | Drill-down: traffic chart, visits by section, RUM detail panel |
+| Deep analytics | Drill-down: traffic chart, page views by section, RUM detail panel |
 
 **Manage (actionable, warm accents)**
 
@@ -40,7 +40,7 @@ Two different sources, both cached in Postgres because neither API is fast enoug
 
 | Source | Table | What it gives |
 | --- | --- | --- |
-| Cloudflare **GraphQL** analytics | `cloudflare_analytics_cache` | page loads, visits, visits by path/section |
+| Cloudflare **GraphQL** analytics | `cloudflare_analytics_cache` | page loads, visits, page views and visits per section |
 | Cloudflare **Web Analytics (RUM)** | `cloudflare_rum_cache` | real-user visits, referrers, a fuller traffic chart |
 
 - **24h is the default window everywhere** (`ADMIN_DEFAULT_RANGE` in `admin-ranges.ts`): the dashboard answers "what is happening now", and a 30-day default made every number read as background noise. The list, labels and window maths live in that one module so the client selector and the server queries cannot drift.
@@ -56,7 +56,10 @@ Two different sources, both cached in Postgres because neither API is fast enoug
 - Chart axes, tooltips, table cells and the "Live / Cached" stamp all run on **one clock, IST**, and the chart says so under the axis. Every label anywhere in the app goes through `src/lib/time-labels.ts` (`SITE_TIMEZONE = 'Asia/Kolkata'`); no component calls `toLocaleDateString` / `toLocaleTimeString` on a timestamp. Before that module, three clocks coexisted: chart buckets were pinned to UTC, table cells used the viewer's zone, and Drive dates used the browser default, so the same view read `2:14 PM` in one row and `12:14` in a chart tick for one admin and something else for another. Day-only values were worse — `2026-11-12` parses as UTC midnight and rendered as the 11th west of Greenwich.
 - **Hourly ticks print minutes**, `5:30 PM` rather than `5 PM`. Cloudflare's buckets start on the UTC hour, and IST is UTC+5:30, so a bucket boundary lands on `:30` IST every time; rounding to the hour would have put a label half a bucket away from the bar it sits under. The chart caption explains the offset instead of hiding it.
 - Absolute moments carry the suffix (`Nov 18, 2026, 2:14 PM IST`), day labels stay `Nov 18`, and any unparseable value renders `—` rather than `Invalid Date`.
-- No beacon script is injected by the app: Cloudflare Pages collects page loads for the project hostname. See the runbook's "New domain" section if a non-Pages host is ever added.
+- The **RUM beacon is injected by the app**, not by Pages: `__root.tsx` renders `beacon.min.js` with `VITE_CF_BEACON_TOKEN`, because Pages only auto-injects for the Pages project's own hostname while real visitors also arrive through the Eazo aliases. A development build renders nothing, so local sessions never pollute production numbers.
+- **Compare sections by page views, not visits.** Cloudflare's `count` is every page load of a path; `sum { visits }` only counts the load that *started* a session (referrer outside the site). Doxxmarks is mostly entered from shared links, the resource pages mostly by clicking through the site, so the old "visits by section" chart under-reported resources by construction — it was a bug in the metric, not in the traffic. The card now charts page views (`count`) and prints visits beside them in a table.
+- The breakdown has **three sections**, defined in `section-breakdown.ts` and used both for the panel and for the RUM query's path allowlist, so they cannot drift: `/doxxmarks`, `/resources` (the library) and `/classes` (**Class hubs** — the home page's class cards land there and each hub lists that class's resources, so it is a resource surface even though its path does not start with `/resources`). Leaving the class hubs out is what made the library look smaller than it is.
+- A cached payload written before the `pageViews` field existed is treated as a miss (`isCurrentPayload`), so a deploy never leaves five minutes of empty bars behind.
 
 ### Campaign sources — the third source
 
