@@ -1,5 +1,5 @@
 {
-  "grandTotal": 7668,
+  "grandTotal": 7703,
   "bySource": {
     "cisce": {
       "icse-9": {
@@ -35,12 +35,12 @@
           "Literature in English": 22,
           "Geography": 30,
           "Hindi": 22,
-          "History & Civics": 23,
+          "History & Civics": 28,
           "Mathematics": 30,
           "Physics": 29
         },
         "misc": 2,
-        "total": 350
+        "total": 355
       },
       "isc-11": {
         "subjects": {
@@ -117,15 +117,15 @@
           "Economic Applications": 5,
           "Economics": 91,
           "English Language": 647,
-          "Geography": 525,
+          "Geography": 526,
           "Hindi": 324,
-          "History & Civics": 509,
-          "Literature in English": 628,
+          "History & Civics": 533,
+          "Literature in English": 633,
           "Mathematics": 839,
           "Physics": 580
         },
         "misc": 432,
-        "total": 6031
+        "total": 6061
       },
       "isc-11": {
         "subjects": {
