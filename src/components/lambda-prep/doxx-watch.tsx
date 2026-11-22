@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Maximize, Minimize } from 'lucide-react';
 import { HlsJsVideo } from '@videojs/react/media/hlsjs-video';
-import { VideoPlayer } from '@videojs/react/video';
+import { VideoPlayer, Video } from '@videojs/react/video';
 import { VideoSkin } from '@/components/videojs/video/skin';
 import { useFullscreen } from '@/hooks/use-fullscreen';
 import { useFrameLoad } from '@/hooks/use-frame-load';
@@ -174,6 +174,11 @@ function SandboxedFrame({ src, title, shareUrl }: { src: string; title: string; 
 function ContentVideoPlayer({ src, title, poster, shareUrl }: { src: string; title: string; poster?: string; shareUrl: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
+  // Most films are HLS playlists Extramarks renders next to the source mp4, but
+  // a handful never got a playlist — only the mp4 itself. Hls.js cannot open an
+  // mp4, so those play through the native element instead of being dropped
+  // from the catalogue.
+  const isHls = /\.m3u8(?:$|[?#])/i.test(src);
 
   useEffect(() => {
     setReady(true);
@@ -188,7 +193,11 @@ function ContentVideoPlayer({ src, title, poster, shareUrl }: { src: string; tit
               {/* The still Extramarks publishes is the first frame of the
                   animation, so it doubles as the poster: the player no longer
                   opens on a black rectangle while the playlist resolves. */}
-              <HlsJsVideo src={src} poster={poster} playsInline preload="auto" />
+              {isHls ? (
+                <HlsJsVideo src={src} poster={poster} playsInline preload="auto" />
+              ) : (
+                <Video src={src} poster={poster} playsInline preload="auto" />
+              )}
             </VideoSkin>
           </VideoPlayer>
         )}

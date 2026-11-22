@@ -156,6 +156,26 @@ Adding a fourth embed origin means editing **both** `CONTENT_SECURITY_POLICY` in
 
 Only discovery needs a login; the apply step reads two local JSON files and nothing else.
 
+## Videos the crawl used to lose
+
+A topic that shows fewer videos here than in the doxxmarks app is the symptom of two filters in `crawl-curriculum.mjs`:
+
+1. **The lesson filter.** `isLessonRecord` only accepted HTML/SLM, **Nucleus + CRS** and **Animation + CRS**. Extramarks files plenty of films under Nucleus/SLM, Animation/SLM, Animation/Senior and Animation/IIT_JEE_SLM, so those records were never collected. The rule is now "a film is a film whatever group it is filed under": every Learn record with `Content Type` Nucleus, or Animation with an `.mp4` URL, is a lesson. CRS keeps its subject-tag check, because that group is shared across subjects.
+2. **Resolution.** A lesson only became a `videoLessons` entry once `verifyVideo` found the HLS playlist next to its mp4. Anything whose `output/` directory 404s was dropped rather than kept.
+
+The committed dataset was 822 videos short of the doxxmarks catalogue because of this (2,661 against 3,633). Two things close the gap:
+
+- `scripts/drive-crawl/sync-doxxmarks-videos.mjs` fills the file from a doxxmarks `public/data` tree — the same catalogue the doxxmarks app serves — deriving the HLS playlist for each missing film (`<dir>/output/manifest.m3u8`, then `<dir>/output/<name>-hd.m3u8`), keeping the mp4 when no playlist is published, and skipping only media that 404s. Videos land under the topic Extramarks tagged them with, else the topic of a same-titled item, else a chapter-level **More in this chapter** bucket — the same place the doxxmarks app puts untagged material. It is a manual step, run when the doxxmarks catalogue moves ahead:
+
+  ```
+  node scripts/drive-crawl/sync-doxxmarks-videos.mjs \
+    --catalogue /path/to/doxxmarks/public/data [--apply] [--report PATH]
+  ```
+
+- `ContentVideoPlayer` in `doxx-watch.tsx` now plays a non-HLS source through the native `<video>` element, so an mp4-only film is a lesson rather than a gap. Hls.js cannot open an mp4, which is why the fallback exists.
+
+After the first sync the catalogue holds 3,654 videos against the doxxmarks app's 3,633 — the extra ones are films this repo files in more than one chapter, and the five that differ are dead (404) media in the doxxmarks catalogue.
+
 ### Getting `EXTRAMARKS_TOKEN`
 
 The discovery script authenticates as a teacher, so it needs a short-lived JWT (~60 min) that cannot be minted server-side:

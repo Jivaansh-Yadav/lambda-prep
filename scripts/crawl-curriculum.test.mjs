@@ -95,6 +95,48 @@ test("isLessonRecord accepts both SLM content-group labels", () => {
   }
 });
 
+test("isLessonRecord keeps films filed under a group other than CRS", () => {
+  // ICSE XI Computer Applications, "Social context of Computing": the Malware
+  // film is a Nucleus record in the SLM group, and the old CRS-only rule threw
+  // it away, so the topic lost a video the doxxmarks app still lists.
+  assert.equal(
+    isLessonRecord(
+      {
+        category: "Learn",
+        contentType: "Nucleus",
+        contentGroup: "SLM",
+        rawUrl: "content_data/Nucleus/2024/12/10/173383472395245075_dir_V001/1/data.json",
+      },
+      { subjectName: "Computer Science" },
+    ),
+    true,
+  );
+
+  for (const contentGroup of ["Senior", "SLM", "SLM - EMR", "IIT_JEE_SLM"]) {
+    assert.equal(
+      isLessonRecord(
+        {
+          category: "Learn",
+          contentType: "Animation",
+          contentGroup,
+          rawUrl: "content_data/Animation/2025/5/13/174713666651659934_dir_V001/1/a.mp4",
+        },
+        { subjectName: "Physics" },
+      ),
+      true,
+    );
+  }
+
+  // An Animation record without a media URL is metadata, not a lesson.
+  assert.equal(
+    isLessonRecord(
+      { category: "Learn", contentType: "Animation", contentGroup: "SLM", rawUrl: "x/data.json" },
+      { subjectName: "Physics" },
+    ),
+    false,
+  );
+});
+
 test("buildContentUrl wraps bare PDF-tagged Virtual Labs", () => {
   const url = new URL(
     buildContentUrl({

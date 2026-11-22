@@ -248,15 +248,27 @@ function buildRecord(node, group, content) {
   };
 }
 
-export function isLessonRecord(record, { subjectName, board, className }) {
-  return (
-    record.category === "Learn" &&
-    ((record.contentType === "HTML" && ["SLM - EMR", "SLM"].includes(record.contentGroup)) ||
-      (record.contentType === "Nucleus" && record.contentGroup === "CRS") ||
-      (record.contentType === "Animation" &&
-        record.contentGroup === "CRS" &&
-        normalizeName(record.tags.Subject ?? "") === normalizeName(subjectName)))
-  );
+export function isLessonRecord(record, { subjectName }) {
+  if (record.category !== "Learn") return false;
+  if (record.contentType === "HTML" && ["SLM - EMR", "SLM"].includes(record.contentGroup)) {
+    return true;
+  }
+  // A film is a film whatever group Extramarks filed it under. The old rule
+  // only took Nucleus/CRS and Animation/CRS, which silently dropped the ~450
+  // Nucleus/Animation records sitting in SLM and Senior groups — the exact
+  // videos the doxxmarks app lists and this catalogue did not. Whether the
+  // record plays is decided later, by HLS resolution, not by its group.
+  if (record.contentType === "Nucleus") return true;
+  if (record.contentType === "Animation") {
+    if (!/\.mp4(?:$|[?#])/i.test(record.rawUrl ?? "")) return false;
+    // CRS is the one group shared across subjects (a recorded session can be
+    // tagged with the board rather than the subject), so it keeps its check.
+    return (
+      record.contentGroup !== "CRS" ||
+      normalizeName(record.tags?.Subject ?? "") === normalizeName(subjectName)
+    );
+  }
+  return false;
 }
 
 async function getChildList(boardId, syllabusId, languageId, headers) {
@@ -320,7 +332,7 @@ export async function collectSubject({
         const record = buildRecord(node, group, content);
         const key = `${record.category}|${record.contentType}|${record.contentGroup}`;
         taxonomy[key] = (taxonomy[key] ?? 0) + 1;
-        if (isLessonRecord(record, { subjectName, board, className })) lessonRows.push(record);
+        if (isLessonRecord(record, { subjectName })) lessonRows.push(record);
         if (isActivityRecord(record, subjectName)) activityRows.push(record);
       }
     }
