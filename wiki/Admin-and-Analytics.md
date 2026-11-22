@@ -84,11 +84,12 @@ The part worth reading twice.
 | `crawl` | Drive crawl | the Drive tree walk |
 | `datasets` | Datasets | transform, split, sort, count |
 | `instarevision` | InstaRevision | re-applying the public revision-note links |
+| `covers` | Covers | joining Extramarks cover art onto every lesson and note |
 | `commit` | Commit | secret cleanup, diff summary, commit + push |
 | `runner` | Runner | GitHub's own “Set up job” / “Complete job” / `Post …` steps |
 | `other` | Other | any step whose name lost its tag |
 
-The `[Tag]` prefix wins; a light alias table (`crawl`/`drive`, `datasets`/`data`, `instarevision`/`revision`, …) absorbs reasonable renames. An untagged step still shows up, under “Other” — the panel degrades instead of breaking.
+The `[Tag]` prefix wins; a light alias table (`crawl`/`drive`, `datasets`/`data`, `instarevision`/`revision`, `covers`/`thumbnail`, …) absorbs reasonable renames. An untagged step still shows up, under “Other” — the panel degrades instead of breaking.
 
 ### What the panel does
 

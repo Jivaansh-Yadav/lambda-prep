@@ -88,7 +88,10 @@ const BASE_CSP_DIRECTIVES = [
   "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "img-src 'self' data: blob: https://drive.google.com",
+  // storage.googleapis.com serves the Extramarks cover art the Doxxmarks
+  // catalogue publishes (see scripts/drive-crawl/apply-doxx-thumbnails.mjs),
+  // alongside the revision-note PDFs already allowed in frame-src.
+  "img-src 'self' data: blob: https://drive.google.com https://storage.googleapis.com",
   "media-src 'self' blob: https://mscontent-gcp.extramarks.com",
   "connect-src 'self' https://mscontent-gcp.extramarks.com https://cloudflareinsights.com",
   "frame-src 'self' https://drive.google.com https://docs.google.com https://mscontent-gcp.extramarks.com https://storage.googleapis.com",

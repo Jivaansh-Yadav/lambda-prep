@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { ArrowLeft, ArrowUpRight, BookOpen, ChevronRight, PlayCircle, FileText, MonitorPlay, Search } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import type { DoxxLesson } from '@/components/lambda-prep/doxx-watch';
+import { DoxxThumb } from '@/components/lambda-prep/doxx-thumb';
 import { NotePdfWatch } from '@/components/lambda-prep/note-pdf-watch';
 import { curriculumClasses, type LessonLink } from '@/lib/curriculum';
 import { classes, findSubjectMeta, pageHead, getSiteOrigin, sortBySubjectOrder } from '@/lib/lambda-prep';
@@ -93,13 +94,13 @@ function Doxxmarks() {
   const combinedLessons = useMemo((): DoxxLesson[] => {
     if (!topic) return [];
     const classLessons: DoxxLesson[] = topic.interactiveClasses.map(ic => ({
-      name: ic.name, link: ic.link, kind: 'interactive', category: 'interactive', typeLabel: t('doxx.type.interactiveClass'),
+      name: ic.name, link: ic.link, thumb: ic.thumb, kind: 'interactive', category: 'interactive', typeLabel: t('doxx.type.interactiveClass'),
     }));
     const videos: DoxxLesson[] = topic.videoLessons.map(v => ({
-      name: v.name, link: v.link, kind: 'video', category: 'videos', typeLabel: t('doxx.type.video'),
+      name: v.name, link: v.link, thumb: v.thumb, kind: 'video', category: 'videos', typeLabel: t('doxx.type.video'),
     }));
     const activities: DoxxLesson[] = topic.activities.map(a => ({
-      name: a.title, link: a.link, kind: 'interactive', category: categoryForActivity(a.type), typeLabel: a.type,
+      name: a.title, link: a.link, thumb: a.thumb, kind: 'interactive', category: categoryForActivity(a.type), typeLabel: a.type,
     }));
     return [...classLessons, ...videos, ...activities];
   }, [topic, t]);
@@ -374,7 +375,8 @@ function Doxxmarks() {
           ) : noteItems.length ? (
             <div className="doxx-list">
               {noteItems.map(n => (
-                <button key={n.link} type="button" className="doxx-row" onClick={() => openNote(n)}>
+                <button key={n.link} type="button" className="doxx-row doxx-row-note" onClick={() => openNote(n)}>
+                  <DoxxThumb className="doxx-note-thumb" src={n.thumb} icon={<FileText size={18} />} />
                   <span className="doxx-row-title">{n.name}</span><ArrowUpRight size={18} />
                 </button>
               ))}
@@ -428,11 +430,21 @@ function Doxxmarks() {
                 <div className="doxx-cards doxx-cards-lessons">
                   {items.map(lesson => (
                     <button key={lesson.link} type="button" className="doxx-card doxx-card-lesson" onClick={() => playLesson(lesson)}>
-                      <span className="doxx-card-icon"><Icon size={20} strokeWidth={1.9} /></span>
-                      <span className="doxx-card-title">{lesson.name}</span>
-                      <span className="doxx-card-meta">
-                        <span className="doxx-card-type">{lesson.typeLabel}</span>
-                        <PlayCircle size={14} />
+                      {/* The frame Extramarks already serves, instead of a
+                          generic icon: a game, a video still and a case study
+                          are told apart before the title is read. */}
+                      <DoxxThumb
+                        className="doxx-lesson-cover"
+                        src={lesson.thumb}
+                        icon={<Icon size={22} strokeWidth={1.8} />}
+                        video={lesson.kind === 'video'}
+                      />
+                      <span className="doxx-card-body">
+                        <span className="doxx-card-title">{lesson.name}</span>
+                        <span className="doxx-card-meta">
+                          <span className="doxx-card-type">{lesson.typeLabel}</span>
+                          <PlayCircle size={14} />
+                        </span>
                       </span>
                     </button>
                   ))}

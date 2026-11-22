@@ -18,8 +18,15 @@ Doxxmarks is the chapter-wise layer of the portal: classes → subjects → chap
               "chapters": [
                 {
                   "name": "Genetics - Some Basic Fundamentals",
-                  "revisionNotes": [ { "name", "link" } ],
-                  "topics": [ … ]
+                  "revisionNotes": [ { "name", "link", "thumb?" } ],
+                  "topics": [
+                    {
+                      "name": "…",
+                      "interactiveClasses": [ { "name", "link", "thumb?" } ],
+                      "videoLessons":      [ { "name", "link", "thumb?" } ],
+                      "activities":        [ { "type", "title", "link", "thumb?" } ]
+                    }
+                  ]
                 }
               ]
             }
@@ -50,7 +57,7 @@ gs://emnewcontent/beta/content_data_private/PDF/…/Revision_Notes_ICSE_X_Force.
 Consequences that matter for everything below:
 
 - **No signing, anywhere.** There is no `getSignedUrl` call, no GCS V4 URL, no 7-day clock to beat. The previous pipeline minted signed URLs from a `Basic` credential on `upload.extramarks.com`; that whole path is gone, along with the `insta_revision_integration` Neon row that held the credential.
-- **Nothing rotates, so nothing has to run weekly.** `update-resources.yml` no longer carries a `schedule:` — it is dispatched by hand (the admin panel's “Update resource datasets” button) only when Drive content actually changed.
+- **Nothing rotates, so nothing *has* to run weekly.** The note URLs never expire; the weekly `schedule:` on `update-resources.yml` (Mondays 03:23 UTC) exists to pick up new Drive content, and the admin panel's “Update resource datasets” button dispatches the same workflow by hand.
 - **A moved object still 404s.** Public does not mean stable: if the PDF is re-uploaded under a new path, the old URL returns `404` while the private copy keeps working. Re-running discovery is what fixes that.
 
 ## The single step
@@ -85,6 +92,50 @@ node scripts/drive-crawl/apply-insta-revision-notes.mjs
 - **Fullscreen** — the player and the PDF viewer both need fullscreen from inside a framed document. That is why `Permissions-Policy` in `src/server.ts` lists `fullscreen=(self "https://mscontent-gcp.extramarks.com" "https://drive.google.com")` instead of `fullscreen=()`, and why `_headers` carries the same value.
 - **Sandboxing** — embedded third-party frames are sandboxed, but PDF viewers need `allow-same-origin` to render at all; removing it produces a blank white frame (this was a real regression, see the Resources section of the runbook).
 
+## Cover art
+
+Every material carries an optional `thumb` (a plain public image URL, same no-signing rule as the PDFs). Cards render it through `doxx-thumb.tsx`; when `thumb` is absent the card falls back to a tinted icon tile, so a missing cover is a normal state and never a broken image.
+
+```
+apply-doxx-thumbnails.mjs   reads the catalogue Jivaansh-Yadav/doxxmarks publishes
+                            → joins each material to its artwork
+                            → HEADs the candidate and drops house splashes
+                            → rewrites `thumb` on every material in doxxmarks_resources.json
+```
+
+Run by hand with `node scripts/drive-crawl/apply-doxx-thumbnails.mjs`, or as the `[Covers]` step in `update-resources.yml` (after `[InstaRevision]`, marked `continue-on-error` so a catalogue outage cannot fail a dataset refresh). Flags: `--repo`, `--ref`, `--source <dir>` (use a local clone instead of `raw.githubusercontent.com`), `--curriculum`, `--stock-min`, `--no-probe`, `--dry`.
+
+### Joining a material to its artwork
+
+The catalogue is Extramarks' own `public/data/ICSE/{IX..XII}.json`, which lists one entry per object with `thumb`, `path`, `url`, `title`. Three passes, first hit wins, most reliable first:
+
+| Pass | Key | Why it works |
+| --- | --- | --- |
+| `url` | normalised link (case, trailing slash, `http`→`https`) | exact identity |
+| `folder` | the content-folder id inside the link — `…/<id>_dir_V001/` or `…/dir_<id>/` | a lesson, its video and its game share one folder even when filenames differ |
+| `title` | class + subject + normalised title | catches videos, whose catalogue URLs are `.mp4` while ours are `.m3u8` |
+
+`apply-thumbs` **deletes every existing `thumb` first** and rewrites from scratch, so the dataset is a pure function of the catalogue — a cover that disappears upstream disappears here too instead of going stale.
+
+### Dropping house artwork
+
+A large share of Extramarks' “thumbnails” are one branded splash copied into hundreds of folders: distinct URLs, byte-identical images (`IcseDL`, `ImageDL`, `DLThumbnail.png`, `ICSEHOTS.png`, …). Two filters remove them:
+
+1. **By filename** — `HOUSE_ART` in `apply-doxx-thumbnails.mjs` (`icsedl`, `imagedl`, `dlthumbnail`, `extramarks`, `logo`, `splash`, `placeholder`, `casestudy`).
+2. **By content** — the pass reads `x-goog-hash` from a `HEAD` on every surviving candidate and any image appearing in **at least `--stock-min` (default 2) different folders** is treated as stock and dropped. The rule is per-file rather than global on purpose: a global “used more than N times” cut would also delete genuinely shared subject artwork.
+
+The rule tightens per kind. **Interactive classes** are judged strictly — an image is only trusted if no other topic in the class uses it — because their artwork is either a one-off screenshot or a splash: on the current catalogue that leaves 5 covers out of 1,626, and every other card shows its icon tile, which reads far better than the wordmark. Videos, playables and notes only lose an image that would appear twice on the same page, since a practice-game cover shared by every game of its type is *relevant*, not stock.
+
+Current coverage (printed by every run): **3,934 / 6,083 (65%)** — videos 2,681/2,774, playables 1,202/1,628, notes 46/55, interactive 5/1,626.
+
+### Rendering a cover
+
+`doxx-thumb.tsx` takes `{src, icon, video}`. With no `src` — or a URL that fails to load — it renders the tinted gradient tile with the section's glyph, so a dead CDN link degrades to the same look as a missing cover instead of a broken-image icon. Videos get a play glyph over the still (`className` carries the size: `.doxx-lesson-cover` for cards, `.doxx-side-thumb` in the playlist, `.doxx-note-thumb` in the note row).
+
+### What it costs
+
+~4.3k `HEAD` requests, about a minute at concurrency 24. `--no-probe` skips them (and the stock filter) for an offline run; `--dry` prints the coverage table without writing.
+
 ## CSP consequences
 
 `frame-src` must include:
@@ -94,6 +145,8 @@ node scripts/drive-crawl/apply-insta-revision-notes.mjs
 | `https://drive.google.com` | Drive-hosted PDFs in the resource viewer |
 | `https://mscontent-gcp.extramarks.com` | Interactive classes and lesson video |
 | `https://storage.googleapis.com` | The public-bucket revision-note PDFs |
+
+`img-src` must include `https://storage.googleapis.com` as well — the cover art and the note PDFs live on the same public mirror, and that origin is needed even on pages that embed nothing.
 
 Adding a fourth embed origin means editing **both** `CONTENT_SECURITY_POLICY` in `src/server.ts` and `public/_headers`, or the iframe works in dev (where the worker header wins) and breaks behind the static host — or the reverse.
 

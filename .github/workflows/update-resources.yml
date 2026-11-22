@@ -109,6 +109,19 @@ jobs:
         run: node scripts/drive-crawl/apply-insta-revision-notes.mjs
 
       # ------------------------------------------------------------------
+      # [Covers] — join Extramarks cover art onto every material
+      # ------------------------------------------------------------------
+      # Reads the catalogue Jivaansh-Yadav/doxxmarks publishes and rewrites the
+      # `thumb` field on each lesson and note. The pass HEADs every candidate to
+      # drop the splashes Extramarks copies into hundreds of folders, so it needs
+      # the network; `continue-on-error` keeps a catalogue outage from failing a
+      # dataset refresh — the covers simply stay as they are and the cards fall
+      # back to their icon tiles.
+      - name: "[Covers] Apply Extramarks cover art"
+        continue-on-error: true
+        run: node scripts/drive-crawl/apply-doxx-thumbnails.mjs
+
+      # ------------------------------------------------------------------
       # [Commit] — clean up the secret, then commit whatever changed
       # ------------------------------------------------------------------
       - name: "[Commit] Remove service-account credentials"

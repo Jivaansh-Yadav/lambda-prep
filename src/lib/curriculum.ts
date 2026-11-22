@@ -1,11 +1,18 @@
 import raw from '@/data/doxxmarks_resources.json';
 
-export interface LessonLink { name: string; link: string; }
+export interface LessonLink {
+  name: string;
+  link: string;
+  /** Cover art Extramarks publishes for this material, on the public GCS
+   * mirror — joined in by scripts/drive-crawl/apply-doxx-thumbnails.mjs.
+   * Missing for the ~1 in 5 items whose only artwork is a house splash. */
+  thumb?: string;
+}
 /** A non-video, non-class activity node (practice game, virtual lab, HOTS
  * case study, …) crawled from Extramarks alongside the topic's lessons.
  * `type` is the Extramarks content group and doubles as the label shown on
  * the card; the crawler records `status` for the ones it HTTP-checked. */
-export interface TopicActivity { type: string; title: string; link: string; status?: string; note?: string; }
+export interface TopicActivity { type: string; title: string; link: string; thumb?: string; status?: string; note?: string; }
 export interface Topic { name: string; interactiveClasses: LessonLink[]; videoLessons: LessonLink[]; activities: TopicActivity[]; }
 export interface Chapter { name: string; revisionNotes?: LessonLink[]; topics: Topic[]; }
 export interface CurriculumSubject { name: string; chapters: Chapter[]; }
@@ -33,7 +40,7 @@ const withActivities = (items: TopicActivity[] | undefined): TopicActivity[] => 
     const link = item?.link?.trim() ?? '';
     if (!title || !link || item.status === 'BROKEN' || seen.has(link)) return [];
     seen.add(link);
-    return [{ type: item.type?.trim() ?? '', title, link, ...(item.status ? { status: item.status } : {}) }];
+    return [{ type: item.type?.trim() ?? '', title, link, ...(item.thumb ? { thumb: item.thumb } : {}), ...(item.status ? { status: item.status } : {}) }];
   });
 };
 

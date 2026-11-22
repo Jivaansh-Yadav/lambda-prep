@@ -6,6 +6,7 @@ import { VideoSkin } from '@/components/videojs/video/skin';
 import { useFullscreen } from '@/hooks/use-fullscreen';
 import { useFrameLoad } from '@/hooks/use-frame-load';
 import { useI18n } from '@/lib/i18n';
+import { DoxxThumb } from '@/components/lambda-prep/doxx-thumb';
 import { FrameStatus } from '@/components/lambda-prep/frame-status';
 import { ShareWidget } from '@/components/lambda-prep/share-widget';
 import { DOXX_CATEGORIES, categoryMeta, type DoxxCategory } from '@/lib/doxx-categories';
@@ -22,6 +23,9 @@ export interface DoxxLesson {
   /** Short badge on the card — the specific Extramarks type for activities
    * ("Virtual Lab", "Practice Game"), or a generic class/video label. */
   typeLabel: string;
+  /** Extramarks still for this material: the card cover, and the video
+   * player's poster frame. */
+  thumb?: string;
 }
 
 interface DoxxWatchProps {
@@ -45,7 +49,7 @@ export function DoxxWatch({ lessons, active, topicName, onSelect, shareUrl }: Do
         {active.kind === 'interactive' ? (
           <SandboxedFrame src={active.link} title={active.name} shareUrl={shareUrl} />
         ) : (
-          <ContentVideoPlayer src={active.link} title={active.name} shareUrl={shareUrl} />
+          <ContentVideoPlayer src={active.link} title={active.name} poster={active.thumb} shareUrl={shareUrl} />
         )}
         <h2 className="doxx-watch-title">{active.name}</h2>
         <p className="doxx-watch-kind">
@@ -88,9 +92,7 @@ function PlaylistSection({ category, lessons, active, onSelect }: { category: Do
                 aria-current={isActive ? 'true' : undefined}
                 onClick={() => onSelect(lesson)}
               >
-                <span className="doxx-side-thumb">
-                  <Icon size={16} />
-                </span>
+                <DoxxThumb className="doxx-side-thumb" src={lesson.thumb} icon={<Icon size={16} />} />
                 <span className="doxx-side-name">{lesson.name}</span>
               </button>
             </li>
@@ -164,7 +166,7 @@ function SandboxedFrame({ src, title, shareUrl }: { src: string; title: string; 
   );
 }
 
-function ContentVideoPlayer({ src, title, shareUrl }: { src: string; title: string; shareUrl: string }) {
+function ContentVideoPlayer({ src, title, poster, shareUrl }: { src: string; title: string; poster?: string; shareUrl: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
 
@@ -178,7 +180,10 @@ function ContentVideoPlayer({ src, title, shareUrl }: { src: string; title: stri
         {ready && (
           <VideoPlayer key={src}>
             <VideoSkin className="doxx-video-skin">
-              <HlsJsVideo src={src} playsInline preload="auto" />
+              {/* The still Extramarks publishes is the first frame of the
+                  animation, so it doubles as the poster: the player no longer
+                  opens on a black rectangle while the playlist resolves. */}
+              <HlsJsVideo src={src} poster={poster} playsInline preload="auto" />
             </VideoSkin>
           </VideoPlayer>
         )}

@@ -56,6 +56,10 @@ describe("categorizeStep", () => {
     });
     expect(categorizeStep("[InstaRevision] Apply public revision-note links").key).toBe("instarevision");
     expect(categorizeStep("[Datasets] Count resources across all datasets").key).toBe("datasets");
+    expect(categorizeStep("[Covers] Apply Extramarks cover art")).toMatchObject({
+      key: "covers",
+      displayName: "Apply Extramarks cover art",
+    });
   });
 
   it("maps GitHub's own bookkeeping steps to the runner category", () => {
@@ -70,6 +74,7 @@ describe("categorizeStep", () => {
     expect(categorizeStep("Install Drive crawl dependencies").key).toBe("setup");
     expect(categorizeStep("Run full resource pipeline (crawl + transform + split + sort + count)").key).toBe("datasets");
     expect(categorizeStep("Refresh InstaRevision PDF signed links (7-day GCS URLs)").key).toBe("instarevision");
+    expect(categorizeStep("Download lesson thumbnails").key).toBe("covers");
     expect(categorizeStep("Remove service-account credentials before diffing/committing").key).toBe("commit");
     expect(categorizeStep("Commit regenerated datasets").key).toBe("commit");
   });

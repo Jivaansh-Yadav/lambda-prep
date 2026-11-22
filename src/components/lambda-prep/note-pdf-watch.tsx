@@ -6,6 +6,7 @@ import { usePersistedFlag } from '@/hooks/use-persisted-flag';
 import { useI18n } from '@/lib/i18n';
 import { FrameStatus } from '@/components/lambda-prep/frame-status';
 import { ShareWidget } from '@/components/lambda-prep/share-widget';
+import { DoxxThumb } from '@/components/lambda-prep/doxx-thumb';
 import type { LessonLink } from '@/lib/curriculum';
 import { PDF_INVERT_STORAGE_KEY } from '@/lib/viewer-preferences';
 
@@ -97,7 +98,7 @@ export function NotePdfWatch({ notes, active, onSelect, shareUrl }: NotePdfWatch
                     aria-current={isActive ? 'true' : undefined}
                     onClick={() => onSelect(note)}
                   >
-                    <span className="doxx-side-thumb"><FileText size={16} /></span>
+                    <DoxxThumb className="doxx-side-thumb" src={note.thumb} icon={<FileText size={16} />} />
                     <span className="doxx-side-name">{note.name}</span>
                   </button>
                 </li>
