@@ -17,6 +17,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { I18nProvider, useI18n } from "../lib/i18n";
 import { captureCampaignTouch } from "../lib/campaign-tracking";
+import { resolveBeaconToken } from "../lib/cf-beacon";
 import { ThemeProvider, themeBootstrapScript } from "../lib/theme";
 
 /** A torn-page book glyph for the 404 state — drawn by hand instead of
@@ -251,23 +252,16 @@ const WEBSITE_JSON_LD = JSON.stringify({
 /**
  * Cloudflare Web Analytics site tag for this deployment.
  *
- * Read from the build environment instead of being hardcoded: the beacon is
- * production telemetry, and a copy committed to the source fired on every
- * local dev session and every fork, mixing their page views into the real
- * site's analytics. Set VITE_CF_BEACON_TOKEN in the deploy environment (and
- * in .env locally to exercise it); when it is missing, or when Vite is
- * serving a development build, nothing is injected and the page stays
- * silent.
+ * A development build renders nothing, so local sessions never touch the real
+ * numbers. A production build always reports: `VITE_CF_BEACON_TOKEN` overrides
+ * the tag and `off` disables it, but a *missing* variable falls back to the
+ * public production tag instead of silently shipping no beacon — that silence
+ * is what froze the panel's traffic for two days (see cf-beacon.ts).
  */
-const CF_BEACON_TOKEN = cloudflareBeaconToken();
-
-function cloudflareBeaconToken(): string | null {
-  // Nothing to measure against a dev server, and the tag belongs to the real
-  // deployment's data — so a development build never renders the beacon.
-  if (readBuildEnv("DEV") === true) return null;
-  const token = readBuildEnv("VITE_CF_BEACON_TOKEN");
-  return typeof token === "string" && token.length > 0 ? token : null;
-}
+const CF_BEACON_TOKEN = resolveBeaconToken({
+  isDev: readBuildEnv("DEV") === true,
+  override: readBuildEnv("VITE_CF_BEACON_TOKEN"),
+});
 
 function readBuildEnv(key: string): string | boolean | undefined {
   // import.meta.env is replaced wholesale at build time, so this lookup is

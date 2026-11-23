@@ -597,7 +597,17 @@ function AdminPage() {
 
             <RumAnalyticsSection result={rumResult} loading={rumLoading} range={range} />
 
-            <CampaignSourcesSection result={campaignResult} loading={campaignLoading} range={range} />
+            <CampaignSourcesSection
+              result={campaignResult}
+              loading={campaignLoading}
+              range={range}
+              cloudflareLoads={
+                result?.configured
+                  ? result.days.reduce((sum, day) => sum + day.pageLoads, 0)
+                  : null
+              }
+              trackedHost={result?.configured ? result.trackedHost : null}
+            />
           </>
         )}
 
@@ -901,10 +911,18 @@ function CampaignSourcesSection({
   result,
   loading,
   range,
+  cloudflareLoads,
+  trackedHost,
 }: {
   result: AdminCampaignResult | null;
   loading: boolean;
   range: AdminRange;
+  /** Page loads Cloudflare recorded on the tracked host for the same window,
+   * or null when the traffic query isn't available. Used as a cross-check:
+   * every recorded arrival ran this app's own JavaScript, so it must also be
+   * a page load Cloudflare saw on some host of this deployment. */
+  cloudflareLoads: number | null;
+  trackedHost: string | null;
 }) {
   if (loading && !result) {
     return <p className="mt-6 text-sm text-muted-foreground">Loading campaign sources…</p>;
@@ -923,6 +941,13 @@ function CampaignSourcesSection({
       </Card>
     );
   }
+
+  // A tagged arrival is recorded by the browser only after the app's own code
+  // runs, which means the page also counted as a Cloudflare page load. If the
+  // app counted more arrivals than Cloudflare counted loads, the beacon is not
+  // reporting — the failure that left this panel reading 4 visits against 97
+  // recorded sessions.
+  const beaconGap = cloudflareLoads !== null && result.total > cloudflareLoads;
 
   return (
     <Card className="mt-6">
@@ -984,6 +1009,32 @@ function CampaignSourcesSection({
           Analytics dataset drops query strings, so these numbers come from the landing URL&apos;s own utm tags —
           one row per session per distinct set of tags.
         </p>
+
+        {beaconGap && (
+          <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+            <p className="text-sm font-medium text-foreground">Cloudflare's numbers look too low for these arrivals</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {result.total.toLocaleString()} {result.total === 1 ? 'session' : 'sessions'} arrived with a campaign tag
+              in this window, but Cloudflare recorded {cloudflareLoads.toLocaleString()}{' '}
+              {cloudflareLoads === 1 ? 'page load' : 'page loads'}
+              {trackedHost ? (
+                <>
+                  {' '}
+                  on <span className="font-mono">{trackedHost}</span>
+                </>
+              ) : null}
+              . Every recorded arrival ran this app&apos;s own JavaScript, so it also loaded a page somewhere — a gap
+              this size means the Web Analytics beacon is not reaching Cloudflare: missing from the deployed HTML,
+              blocked by the visitor&apos;s browser or an extension, or the arrivals came in on a hostname this panel
+              does not track.
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Check the page source for{' '}
+              <span className="font-mono">static.cloudflareinsights.com/beacon.min.js</span>; a production build should
+              always render it (<span className="font-mono">cf-beacon.ts</span>).
+            </p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
