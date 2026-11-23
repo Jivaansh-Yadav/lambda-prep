@@ -9,7 +9,6 @@ import { SITE_URL } from '@/lib/lambda-prep';
  * date; bump them when a page's visible content meaningfully changes. */
 const SITEMAP_ENTRIES: ReadonlyArray<{ path: string; priority: string; lastmod: string }> = [
   { path: '/', priority: '1.0', lastmod: '2026-10-23' },
-  { path: '/doxxmarks', priority: '0.8', lastmod: '2026-10-22' },
   { path: '/resources', priority: '0.9', lastmod: '2026-10-23' },
   { path: '/resources/cisce', priority: '0.7', lastmod: '2026-10-22' },
   { path: '/resources/community', priority: '0.7', lastmod: '2026-10-23' },

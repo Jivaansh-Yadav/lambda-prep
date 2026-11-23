@@ -60,8 +60,8 @@ function requestNativeFullscreen(el: HTMLElement): Promise<void> {
  * Tracks whether the given element is the page's current fullscreen target,
  * and returns a toggle function that enters/exits fullscreen on it. Shared
  * by every "sandboxed/video player with its own fullscreen button" surface
- * (Doxxmarks interactive classes, Doxxmarks videos, Resources PDF viewer) so
- * the same listener + toggle logic isn't duplicated per component.
+ * (Resources PDF viewer) so the same listener + toggle logic isn't
+ * duplicated per component.
  *
  * Where the element-level Fullscreen API is unavailable (iPhone Safari can
  * only fullscreen <video>), this falls back to a CSS "pseudo-fullscreen":

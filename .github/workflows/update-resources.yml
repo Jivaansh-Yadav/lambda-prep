@@ -1,8 +1,8 @@
 name: Update resource datasets
 
 # Re-crawls the Google Drive CISCE/Study-Materials folders, rebuilds the
-# transform/split/sort/count datasets, re-applies the InstaRevision revision-note
-# links, and commits the regenerated JSON datasets back to the repo.
+# transform/split/sort/count datasets, and commits the regenerated JSON
+# datasets back to the repo.
 #
 # Runs every Monday (03:23 UTC) and on demand: the admin panel's "Update
 # resource datasets" button dispatches it with workflow_dispatch. Nothing in the
@@ -99,27 +99,6 @@ jobs:
 
       - name: "[Datasets] Count resources across all datasets"
         run: python3 scripts/count-resources.py
-
-      # ------------------------------------------------------------------
-      # [InstaRevision] — public-bucket note links
-      # ------------------------------------------------------------------
-      # No signing and no credentials: a note's URL is derived from its bucket
-      # path, so this step is a pure local rewrite of doxxmarks_resources.json.
-      - name: "[InstaRevision] Apply public revision-note links"
-        run: node scripts/drive-crawl/apply-insta-revision-notes.mjs
-
-      # ------------------------------------------------------------------
-      # [Covers] — join Extramarks cover art onto every material
-      # ------------------------------------------------------------------
-      # Reads the catalogue Jivaansh-Yadav/doxxmarks publishes and rewrites the
-      # `thumb` field on each lesson and note. The pass HEADs every candidate to
-      # drop the splashes Extramarks copies into hundreds of folders, so it needs
-      # the network; `continue-on-error` keeps a catalogue outage from failing a
-      # dataset refresh — the covers simply stay as they are and the cards fall
-      # back to their icon tiles.
-      - name: "[Covers] Apply Extramarks cover art"
-        continue-on-error: true
-        run: node scripts/drive-crawl/apply-doxx-thumbnails.mjs
 
       # ------------------------------------------------------------------
       # [Commit] — clean up the secret, then commit whatever changed

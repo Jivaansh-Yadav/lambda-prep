@@ -45,7 +45,6 @@ Special cases:
 
 - the four class pages,
 - `/resources`, `/resources/cisce`, `/resources/community`,
-- `/doxxmarks`,
 - `/contribute`,
 - plus the landing page.
 

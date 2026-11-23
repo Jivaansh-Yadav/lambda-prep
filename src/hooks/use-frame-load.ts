@@ -3,9 +3,9 @@ import type { SyntheticEvent } from 'react';
 
 /**
  * How long a frame may sit without firing `load` before we stop pretending
- * it is still on its way. Third-party viewers (Drive's preview, the
- * Extramarks players) boot several requests before they paint, so a few
- * seconds of white box is normal; seven is not — by then the frame is
+ * it is still on its way. Third-party viewers (Drive's preview) boot several
+ * requests before they paint, so a few seconds of white box is normal; seven
+ * is not — by then the frame is
  * usually hanging on a request that will never complete, and the reader
  * needs a way out rather than a spinner.
  */
@@ -13,8 +13,8 @@ const SLOW_AFTER_MS = 7000;
 
 /**
  * A real viewer never finishes booting this quickly: Drive's preview pulls in
- * its whole viewer bundle, and the Extramarks players load a full activity
- * runtime. A refused navigation, on the other hand, "loads" in a fraction of
+ * its whole viewer bundle. A refused navigation, on the other hand, "loads"
+ * in a fraction of
  * that — the browser commits an empty document and fires `load` anyway, which
  * is how a blocked preview used to leave a silent white box.
  */
@@ -45,8 +45,8 @@ export interface FrameLoadState {
  * as a white box with no explanation.
  *
  * Such a document is same-origin (the frame never navigated anywhere), so
- * its URL is readable; a frame that really points at drive.google.com or
- * storage.googleapis.com is cross-origin and `contentDocument` is `null`.
+ * its URL is readable; a frame that really points at drive.google.com is
+ * cross-origin and `contentDocument` is `null`.
  */
 function frameLooksEmpty(frame: HTMLIFrameElement): boolean {
   let doc: Document | null = null;

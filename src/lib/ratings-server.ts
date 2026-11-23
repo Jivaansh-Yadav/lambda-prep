@@ -31,7 +31,7 @@ import { isKnownFileId } from "./resource-lookup-server";
 //      source, which is the realistic threat here.
 //   2. Reject any fileId that isn't found in the real resource dataset
 //      (resolveFileLocation's index — the same data the public
-//      Resources/Doxxmarks pages render from), so junk/made-up ids never
+//      Resources pages render from), so junk/made-up ids never
 //      reach the table at all.
 // ---------------------------------------------------------------------
 

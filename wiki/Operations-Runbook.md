@@ -4,9 +4,8 @@
 
 | Cadence | What happens | Who |
 | --- | --- | --- |
-| When Drive content changes | `/admin` → Update resource datasets: re-crawls Drive, rebuilds datasets, re-applies revision-note links, commits, and Pages redeploys | creator, manual |
+| When Drive content changes | `/admin` → Update resource datasets: re-crawls Drive, rebuilds datasets, commits, and Pages redeploys | creator, manual |
 | Weekly, Monday 03:23 UTC | The same workflow on a cron, so a Drive edit ships without anyone pressing the button. No upstream change means no commit, so an idle week is silent | GitHub Actions |
-| When the Doxxmarks folder tree changes | `node scripts/drive-crawl/discover-insta-revision-sources.mjs`, review the diff to `src/data/insta-revision-sources.json`, commit | creator, manual |
 
 ## Health check (2 minutes)
 
@@ -18,23 +17,18 @@ curl -sI https://lambda-prep.pages.dev/github | grep -i location         # repos
 curl -s  https://lambda-prep.pages.dev/sitemap.xml | head -5             # absolute URLs
 ```
 
-Then open `/doxxmarks?class=icse-10&subject=Biology&chapter=0&note=0`. If the PDF loads, the dataset, the public bucket URL and the CSP are all healthy.
+Then open `/classes/isc-11`, click **Open Doxxmarks** and confirm the new tab lands on the ICSE Class XI page with `utm_source=lambda-prep&utm_medium=class-hub` in the address bar. That single check covers the link builder, the class-slug translation and the UTM contract; `/admin` → analytics → **Sent to Doxxmarks** should then show the visit.
 
 ## Failure playbook
 
-### Revision notes return 403 / blank frame
+### A Doxxmarks link lands on the board chooser
 
-Nothing here is signed any more, so there is no expiry to blame.
-
-1. Open the link out of `doxxmarks_resources.json` in a new tab.
-2. `403` — the object is not in the public mirror (`gs://emnewcontent/beta/…`), only in the private bucket. That is an upstream publishing gap, not a pipeline bug: the same path under `gs://em_content_private` is what Extramarks uploaded.
-3. `404` — the PDF moved or was re-uploaded under a new path. Re-derive the source list: `discover-insta-revision-sources.mjs`, review the diff, commit, then run `apply-insta-revision-notes.mjs` (or the whole workflow).
-4. A PDF that opens in a new tab but renders white in the player is a sandbox/CSP problem, not a link problem — see the next section.
+Doxxmarks only publishes `icse-*` class slugs. `board=ISC` (or a raw `isc-11`) makes it render "Select your board." instead of a class, so `doxxmarksClassSlug()` maps ISC to ICSE on the way out. If a link regresses, check that the class page passes `current.slug` unchanged and that the builder still translates it.
 
 ### Iframe is blank but the URL works in a new tab
 
 - PDF viewers need `allow-same-origin` in the sandbox attribute; a fully sandboxed frame renders white.
-- Check `frame-src` in **both** `src/server.ts` and `public/_headers`. It must include `storage.googleapis.com` for revision-note PDFs, `drive.google.com` for Drive PDFs and `mscontent-gcp.extramarks.com` for interactive classes.
+- Check `frame-src` in **both** `src/server.ts` and `public/_headers`. It must include `drive.google.com` and `docs.google.com` for the Drive PDF viewer, and nothing else — the Extramarks and revision-note origins left with the player, so re-adding one is a signal that something was copied back in.
 
 ### Fullscreen button does nothing inside an embedded frame
 
@@ -158,19 +152,13 @@ The old Vercel deployment used a takedown redirect in both `public/_redirects` a
 | GitHub PAT (Actions) | `github_integration` row, via `/admin` | Immediate |
 | Cloudflare RUM token | `cloudflare_integration` row | Immediate, cache may serve stale numbers until it expires |
 
-### The retired InstaRevision signing credential
+### Retired signing credential
 
-There used to be an HTTP Basic pair for `upload.extramarks.com/getSignedUrl` — a signing oracle that minted a GCS V4 URL for whatever `folderPath` it was handed, i.e. effective read access to `gs://em_content_private` for any object whose name you could guess. It was stored in Neon's `insta_revision_integration` row, read only by `scripts/drive-crawl/neon-config.mjs`, and never in this repository's history.
+No Extramarks signing credential is used any more. The HTTP Basic pair that lived in `insta_revision_integration` (a `getSignedUrl` oracle) has been dropped along with the code that read it, and the notes it used to sign are no longer served from this app at all.
 
-Both the table and the code that read it are gone: the notes are served from the public mirror `gs://emnewcontent`, so nothing needs to be signed. That retires the whole class of failure — there is no expiry to miss and no credential to leak from here.
-
-Two things outlive the code and are still worth knowing:
-
-- **The pair itself may still exist outside git.** Anything that held it — an old working tree, a local `.env`, a CI log, a screenshot, a chat thread — should still be treated as a leaked credential until Extramarks confirms it was revoked. `DROP TABLE` removes our copy, not theirs.
-- **Do not probe the bucket.** Fetching objects that are not ours, "just to see how bad it is", is unauthorised access to a third party's storage. The only legitimate reads are the URLs the app itself serves, for paths listed in `src/data/insta-revision-sources.json`.
+If any copy of that pair still exists outside git — an old working tree, a local `.env`, a CI log, a screenshot, a chat thread — treat it as leaked until Extramarks confirms it was revoked. `DROP TABLE` removes our copy, not theirs.
 
 ## Known follow-ups
 
-- The public mirror `gs://emnewcontent` is an upstream convenience, not a contract: Extramarks could stop mirroring a path at any time, and the notes for that chapter would 403 while the private object stays fine. See [the retired credential note](#the-retired-insta-revision-signing-credential).
 - `public/_redirects` and `src/lib/redirects.ts` duplicate the two destinations by nature (one is static). Keep them in sync; they are two lines each.
 - Dataset JSON files are large enough that GitHub diffs are unreadable. Trust the `--stat` summary in the run log, not the file diff.

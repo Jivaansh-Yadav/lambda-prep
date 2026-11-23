@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { BRAND_MARK } from '@/lib/brand';
 import { classes } from '@/lib/lambda-prep';
+import { DoxxmarksLink } from '@/components/lambda-prep/doxxmarks-link';
 import { useI18n } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme';
 import { submitContactMessage } from '@/lib/contact-server';
@@ -260,11 +261,16 @@ function QuickSearch() {
                   <span>{t('nav.quickCisce')}</span>
                   <ArrowUpRight size={12} className="quick-search-link-arrow" aria-hidden="true" />
                 </Link>
-                <Link to="/doxxmarks" className="quick-search-link" onClick={() => setOpen(false)}>
+                <DoxxmarksLink
+                  entry="lp"
+                  board="ICSE"
+                  className="quick-search-link"
+                  onClick={() => setOpen(false)}
+                >
                   <MonitorPlay size={15} aria-hidden="true" />
                   <span>{t('nav.quickDoxxmarks')}</span>
                   <ArrowUpRight size={12} className="quick-search-link-arrow" aria-hidden="true" />
-                </Link>
+                </DoxxmarksLink>
               </div>
             </section>
           </div>
@@ -339,7 +345,7 @@ export function Header() {
         </span>
       </DropdownMenuContent>
     </DropdownMenu>
-    <Link to="/doxxmarks" search={{}} onClick={() => setOpen(false)} className="nav-link" activeProps={{ className: 'nav-link nav-active' }}><MonitorPlay size={16} />{t('nav.doxxmarks')}</Link>
+    <DoxxmarksLink entry="lp" board="ICSE" onClick={() => setOpen(false)} className="nav-link"><MonitorPlay size={16} />{t('nav.doxxmarks')}</DoxxmarksLink>
     <Link to="/resources" onClick={() => setOpen(false)} className="nav-link" activeProps={{ className: 'nav-link nav-active' }}><FileStack size={16} />{t('nav.resources')}</Link>
     <ThemeToggle />
   </nav><QuickSearch /><Button ref={menuButtonRef} variant="ghost" size="icon" className="mobile-menu" aria-label={open ? t('nav.close') : t('nav.open')} aria-expanded={open} aria-controls="primary-nav" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</Button></div></header>;

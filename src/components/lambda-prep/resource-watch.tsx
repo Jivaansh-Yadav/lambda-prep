@@ -51,11 +51,11 @@ function SidebarSection({ group, items, active, onSelect }: { group: string; ite
   const shouldVirtualize = expanded && visibleItems.length > 80;
 
   return (
-    <div className={`doxx-playlist-section${isGeneral ? ' resource-sidebar-editors-choice' : ''}`}>
-      <h3><span className="doxx-playlist-icon"><FileText size={15} /></span>{getGroupLabel(group)} <span className="resource-count-badge">({items.length})</span></h3>
+    <div className={`content-playlist-section${isGeneral ? ' resource-sidebar-editors-choice' : ''}`}>
+      <h3><span className="content-playlist-icon"><FileText size={15} /></span>{getGroupLabel(group)} <span className="resource-count-badge">({items.length})</span></h3>
       {shouldVirtualize ? (
         <VirtualFileGrid
-          className="doxx-playlist-list-virtual"
+          className="content-playlist-list-virtual"
           items={visibleItems}
           minColumnWidth={9999}
           rowHeight={44}
@@ -67,31 +67,31 @@ function SidebarSection({ group, items, active, onSelect }: { group: string; ite
               <button
                 key={item.id}
                 type="button"
-                className={isActive ? 'doxx-side-item is-active' : 'doxx-side-item'}
+                className={isActive ? 'content-side-item is-active' : 'content-side-item'}
                 aria-current={isActive ? 'true' : undefined}
                 onClick={() => onSelect(item)}
               >
-                <span className="doxx-side-thumb"><FileText size={16} /></span>
-                <span className="doxx-side-name">{item.name}</span>
+                <span className="content-side-thumb"><FileText size={16} /></span>
+                <span className="content-side-name">{item.name}</span>
                 <FileRatingBadge fileId={item.id} inline />
               </button>
             );
           }}
         />
       ) : (
-        <ul className="doxx-playlist-list">
+        <ul className="content-playlist-list">
           {visibleItems.map(item => {
             const isActive = active.id === item.id;
             return (
               <li key={item.id}>
                 <button
                   type="button"
-                  className={isActive ? 'doxx-side-item is-active' : 'doxx-side-item'}
+                  className={isActive ? 'content-side-item is-active' : 'content-side-item'}
                   aria-current={isActive ? 'true' : undefined}
                   onClick={() => onSelect(item)}
                 >
-                  <span className="doxx-side-thumb"><FileText size={16} /></span>
-                  <span className="doxx-side-name">{item.name}</span>
+                  <span className="content-side-thumb"><FileText size={16} /></span>
+                  <span className="content-side-name">{item.name}</span>
                   <FileRatingBadge fileId={item.id} inline />
                 </button>
               </li>
@@ -213,9 +213,9 @@ export function ResourceWatch({ groups, active, onSelect, shareUrl }: ResourceWa
     sizeBytes !== null && Number.isFinite(sizeBytes) ? formatFileSize(sizeBytes) : null;
 
   return (
-    <div className="doxx-watch resource-watch">
-      <div className="doxx-watch-main">
-        <div className="doxx-sandbox-frame resource-pdf-frame" ref={wrapRef}>
+    <div className="content-watch resource-watch">
+      <div className="content-watch-main">
+        <div className="content-sandbox-frame resource-pdf-frame" ref={wrapRef}>
           <iframe
             key={active.id}
             src={previewSrc}
@@ -234,7 +234,7 @@ export function ResourceWatch({ groups, active, onSelect, shareUrl }: ResourceWa
           <div className="resource-pdf-toolbar">
             <button
               type="button"
-              className={inverted ? 'doxx-sandbox-fullscreen is-active' : 'doxx-sandbox-fullscreen'}
+              className={inverted ? 'content-sandbox-fullscreen is-active' : 'content-sandbox-fullscreen'}
               onClick={toggleInverted}
               aria-pressed={inverted}
               aria-label={inverted ? t('resources.watch.darkModeOff') : t('resources.watch.darkModeOn')}
@@ -242,20 +242,20 @@ export function ResourceWatch({ groups, active, onSelect, shareUrl }: ResourceWa
             >
               <Contrast size={16} />
             </button>
-            <button type="button" className="doxx-sandbox-fullscreen" onClick={toggleFullscreen} aria-label={isFullscreen ? t('resources.watch.exitFullscreen') : t('resources.watch.fullscreen')} title={isFullscreen ? t('resources.watch.exitFullscreen') : t('resources.watch.fullscreen')}>
+            <button type="button" className="content-sandbox-fullscreen" onClick={toggleFullscreen} aria-label={isFullscreen ? t('resources.watch.exitFullscreen') : t('resources.watch.fullscreen')} title={isFullscreen ? t('resources.watch.exitFullscreen') : t('resources.watch.fullscreen')}>
               {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
             </button>
-            <a className="doxx-sandbox-fullscreen" href={openSrc} target="_blank" rel="noreferrer" aria-label={t('resources.watch.openInDrive')} title={t('resources.watch.openInDrive')}>
+            <a className="content-sandbox-fullscreen" href={openSrc} target="_blank" rel="noreferrer" aria-label={t('resources.watch.openInDrive')} title={t('resources.watch.openInDrive')}>
               <ExternalLink size={16} />
             </a>
-            <a className="doxx-sandbox-fullscreen" href={downloadSrc} target="_blank" rel="noreferrer" aria-label={t('resources.watch.download')} title={t('resources.watch.download')}>
+            <a className="content-sandbox-fullscreen" href={downloadSrc} target="_blank" rel="noreferrer" aria-label={t('resources.watch.download')} title={t('resources.watch.download')}>
               <Download size={16} />
             </a>
             <ShareWidget compact url={shareUrl} title={active.name} onShare={handleShare} />
           </div>
         </div>
-        <h2 className="doxx-watch-title">{active.name}</h2>
-        <p className="doxx-watch-kind">{getGroupLabel(active.group)}</p>
+        <h2 className="content-watch-title">{active.name}</h2>
+        <p className="content-watch-kind">{getGroupLabel(active.group)}</p>
         {(lastUpdatedLabel || sizeLabel || viewCount !== null || shareCount !== null) && (
           <div className="resource-watch-meta">
             {lastUpdatedLabel && (
@@ -284,7 +284,7 @@ export function ResourceWatch({ groups, active, onSelect, shareUrl }: ResourceWa
         <ResourceCommentsControl key={`${active.id}-comments`} fileId={active.id} />
       </div>
 
-      <aside className="doxx-watch-side" aria-label={t('resources.watch.fileList')} style={sideHeight ? { height: sideHeight, maxHeight: sideHeight } : undefined}>
+      <aside className="content-watch-side" aria-label={t('resources.watch.fileList')} style={sideHeight ? { height: sideHeight, maxHeight: sideHeight } : undefined}>
         {groups.map(section => (
           <SidebarSection key={section.group} group={section.group} items={section.items} active={active} onSelect={onSelect} />
         ))}

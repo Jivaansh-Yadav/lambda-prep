@@ -60,8 +60,6 @@ export type WorkflowCategoryKey =
   | "setup"
   | "crawl"
   | "datasets"
-  | "instarevision"
-  | "covers"
   | "commit"
   | "runner"
   | "other";
@@ -79,8 +77,6 @@ export const WORKFLOW_CATEGORIES: CategoryDef[] = [
   { key: "setup", label: "Setup", description: "Checkout, Node/Python toolchains, Drive credentials" },
   { key: "crawl", label: "Drive crawl", description: "Walks the Drive folder tree and lists every file" },
   { key: "datasets", label: "Datasets", description: "Transform, split, sort and count the resource JSON" },
-  { key: "instarevision", label: "InstaRevision", description: "Re-applies the public revision-note PDF links" },
-  { key: "covers", label: "Covers", description: "Joins Extramarks cover art onto every lesson and note" },
   { key: "commit", label: "Commit", description: "Cleans up secrets and commits the regenerated data" },
   { key: "runner", label: "Runner", description: "GitHub's own job setup and teardown steps" },
   { key: "other", label: "Other", description: "Steps without a category tag" },
@@ -94,12 +90,6 @@ const CATEGORY_ALIASES: Record<string, WorkflowCategoryKey> = {
   dataset: "datasets",
   datasets: "datasets",
   data: "datasets",
-  instarevision: "instarevision",
-  revision: "instarevision",
-  covers: "covers",
-  cover: "covers",
-  thumbnail: "covers",
-  thumbnails: "covers",
   commit: "commit",
   publish: "commit",
 };
@@ -136,12 +126,6 @@ export function categorizeStep(rawName: string): StepCategory {
   // Order matters: the old pipeline collapsed crawl+transform into one
   // "Run full resource pipeline" step, and "Write … credentials" vs
   // "Remove … credentials" belong to opposite categories.
-  if (/insta\s*revision|signed link/i.test(name)) {
-    return { key: "instarevision", label: "InstaRevision", displayName: name };
-  }
-  if (/cover art|thumbnail/i.test(name)) {
-    return { key: "covers", label: "Covers", displayName: name };
-  }
   if (/^commit\b|commit regenerated|remove .*credential/i.test(name)) {
     return { key: "commit", label: "Commit", displayName: name };
   }

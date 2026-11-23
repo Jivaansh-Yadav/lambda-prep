@@ -212,7 +212,7 @@ export function ShareWidget({ url, title, compact = false, onShare }: ShareWidge
       <ModalRoot open={open} onOpenChange={setOpen}>
         <ModalTrigger asChild>
           {compact ? (
-            <button type="button" className="doxx-sandbox-fullscreen" aria-label={t('share.button')} title={t('share.button')}>
+            <button type="button" className="content-sandbox-fullscreen" aria-label={t('share.button')} title={t('share.button')}>
               <Share2 size={16} />
             </button>
           ) : (

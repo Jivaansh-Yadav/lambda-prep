@@ -13,7 +13,7 @@ interface FrameStatusProps {
   /** What the link opens ("Open in Google Drive", "Open PDF in new tab"). */
   openLabel: string;
   /** What the viewer is doing while it boots. A PDF sits in a paginating
-   * viewer, an Extramarks build in a game/player runtime, so the words that
+   * viewer while an embedded activity runs its own runtime, so the words that
    * describe the wait differ even though the wait looks identical. */
   variant?: 'document' | 'activity';
 }

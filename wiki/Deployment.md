@@ -118,4 +118,4 @@ curl -sI https://lambda-prep.pages.dev/github      | grep -i location,http
 curl -s  https://lambda-prep.pages.dev/sitemap.xml | head -5
 ```
 
-Then open `/doxxmarks?class=icse-10&subject=Biology&chapter=0&note=0` and confirm the revision-note PDF loads from `storage.googleapis.com` — that single check exercises the dataset, the public bucket URL and the CSP `frame-src` rule at once.
+Then open `/classes/isc-11`, click **Open Doxxmarks**, and confirm the new tab lands on the ICSE Class XI page with `utm_source=lambda-prep&utm_medium=class-hub` — that single check exercises the link builder, the ISC→ICSE slug translation and the UTM contract at once. `/doxxmarks` itself must now 404 (the route is gone), and the admin analytics card **Sent to Doxxmarks** should list the visit within a second or two.

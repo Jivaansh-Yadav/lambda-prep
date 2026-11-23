@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, MonitorPlay, Search, Shi
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { classes, getSubjects, pageHead, classSeoDescriptions } from '@/lib/lambda-prep';
-import { getCurriculumClass, findSubjectInClass } from '@/lib/curriculum';
+import { DoxxmarksLink } from '@/components/lambda-prep/doxxmarks-link';
 import { useI18n } from '@/lib/i18n';
 import { StreamTabs } from '@/components/lambda-prep/stream-tabs';
 import { BackLink } from '@/components/lambda-prep/back-link';
@@ -33,15 +33,20 @@ function ClassHubView({ current }: { current: CurrentClass }) {
   // stream here and then jumping to a resource source lands pre-filtered
   // to that same stream, instead of resetting back to "All".
   const streamSearchParam = current.board === 'ISC' && stream !== 'All' ? stream : undefined;
-  const curriculumClass = getCurriculumClass(current.board, current.roman);
-  const selectedSubject = selected ? findSubjectInClass(curriculumClass, selected) : undefined;
-  const hasDoxxContent = !!selectedSubject && selectedSubject.chapters.length > 0;
 
   return <main className="hub-page container">
     <BackLink to="/" label={t('hub.allClasses')} />
     <div className="hub-heading">
       <div><p className="eyebrow">{current.board}</p><h1>Class {current.grade}<span className="text-primary">.</span></h1><p>{current.label}</p></div>
-      <span className="hub-badge"><BookOpen size={18} /> {current.board} {t('hub.curriculum')}</span>
+      <div className="hub-heading-actions">
+        <span className="hub-badge"><BookOpen size={18} /> {current.board} {t('hub.curriculum')}</span>
+        {/* Doxxmarks is a separate site: the class page it opens is chosen by
+            board + class, and utm_medium=class-hub tells its analytics (and
+            ours) that the visitor came from here rather than the landing page. */}
+        <DoxxmarksLink entry="class-hub" board={current.board} classSlug={current.slug} className="hub-content-link">
+          <MonitorPlay size={17} /> {t('hub.openDoxxmarks')}
+        </DoxxmarksLink>
+      </div>
     </div>
     <div className="hub-toolbar">
       {current.board === 'ISC' ? <StreamTabs stream={stream} onChange={setStream} /> : <h2>{t('hub.yourSubjects')} <span>{available.length}</span></h2>}
@@ -70,19 +75,18 @@ function ClassHubView({ current }: { current: CurrentClass }) {
 
           <div className="dialog-path-group">
             <p className="dialog-path-label">{t('hub.detail.classesLabel')}</p>
-            {hasDoxxContent ? (
-              <Link to="/doxxmarks" search={{ class: current.slug, subject: selected }} className="dialog-path-card" onClick={() => setSelected(null)}>
-                <span className="subject-icon"><MonitorPlay size={22} /></span>
-                <span className="dialog-path-copy"><strong>{t('hub.detail.classesTitle')}</strong><span>{t('hub.detail.classesText')}</span></span>
-                <ArrowRight size={18} />
-              </Link>
-            ) : (
-              <div className="dialog-path-card dialog-path-card-disabled" aria-disabled="true">
-                <span className="subject-icon"><MonitorPlay size={22} /></span>
-                <span className="dialog-path-copy"><strong>{t('hub.detail.classesTitle')}</strong><span>{t('hub.detail.comingSoonText')}</span></span>
-                <span className="dialog-path-badge">{t('hub.detail.comingSoonBadge')}</span>
-              </div>
-            )}
+            <DoxxmarksLink
+              entry="class-hub"
+              board={current.board}
+              classSlug={current.slug}
+              subject={selected}
+              className="dialog-path-card"
+              onClick={() => setSelected(null)}
+            >
+              <span className="subject-icon"><MonitorPlay size={22} /></span>
+              <span className="dialog-path-copy"><strong>{t('hub.detail.classesTitle')}</strong><span>{t('hub.detail.classesText')}</span></span>
+              <ArrowRight size={18} />
+            </DoxxmarksLink>
           </div>
 
           <div className="dialog-path-group">

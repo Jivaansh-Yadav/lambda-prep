@@ -7,17 +7,16 @@
 //   sum.visits → page loads that STARTED a session, i.e. loads whose referrer
 //                was outside the site. An in-app navigation never produces one.
 //
-// Doxxmarks is mostly entered from shared links (external referrer → a visit),
-// while the resource pages are mostly reached by clicking through the site
-// (internal referrer → no visit). Comparing sections by `visits` therefore
-// under-reported resources by construction: a real bug, not a traffic fact.
+// The resource pages are mostly reached by clicking through the site (internal
+// referrer → no visit), so comparing sections by `visits` alone under-reported
+// them by construction: a real bug, not a traffic fact.
 //
-// The class hubs are a third section, not part of `/resources`: the home page's
-// class cards go to `/classes/$classId`, which lists that class's resources and
-// is where most resource browsing actually starts. Leaving it out of the
-// breakdown made the library look smaller than it is.
+// The class hubs are their own section rather than part of `/resources`: the
+// home page's class cards go to `/classes/$classId`, which lists that class's
+// resources and is where most resource browsing actually starts. Leaving it out
+// of the breakdown made the library look smaller than it is.
 
-export type SectionKey = "doxxmarks" | "resources" | "classes";
+export type SectionKey = "resources" | "classes";
 
 export type SectionDef = {
   key: SectionKey;
@@ -27,7 +26,6 @@ export type SectionDef = {
 };
 
 export const SECTION_DEFS: readonly SectionDef[] = [
-  { key: "doxxmarks", label: "Doxxmarks", prefix: "/doxxmarks" },
   { key: "resources", label: "Resource library", prefix: "/resources" },
   { key: "classes", label: "Class hubs", prefix: "/classes" },
 ];

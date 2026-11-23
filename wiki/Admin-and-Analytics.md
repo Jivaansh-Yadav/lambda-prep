@@ -57,8 +57,8 @@ Two different sources, both cached in Postgres because neither API is fast enoug
 - **Hourly ticks print minutes**, `5:30 PM` rather than `5 PM`. Cloudflare's buckets start on the UTC hour, and IST is UTC+5:30, so a bucket boundary lands on `:30` IST every time; rounding to the hour would have put a label half a bucket away from the bar it sits under. The chart caption explains the offset instead of hiding it.
 - Absolute moments carry the suffix (`Nov 18, 2026, 2:14 PM IST`), day labels stay `Nov 18`, and any unparseable value renders `—` rather than `Invalid Date`.
 - The **RUM beacon is injected by the app**, not by Pages: `__root.tsx` renders `beacon.min.js` with the site tag resolved in `cf-beacon.ts` — `VITE_CF_BEACON_TOKEN` when the build environment sets one, the public production tag otherwise, and nothing at all in a development build. Pages only auto-injects for the Pages project's own hostname while real visitors also arrive through the Eazo aliases, so the beacon has to be ours. The default exists because requiring the variable meant a deploy without it shipped **no beacon at all**, and nothing in the panel said so: see "When the numbers disagree" below.
-- **Compare sections by page views, not visits.** Cloudflare's `count` is every page load of a path; `sum { visits }` only counts the load that *started* a session (referrer outside the site). Doxxmarks is mostly entered from shared links, the resource pages mostly by clicking through the site, so the old "visits by section" chart under-reported resources by construction — it was a bug in the metric, not in the traffic. The card now charts page views (`count`) and prints visits beside them in a table.
-- The breakdown has **three sections**, defined in `section-breakdown.ts` and used both for the panel and for the RUM query's path allowlist, so they cannot drift: `/doxxmarks`, `/resources` (the library) and `/classes` (**Class hubs** — the home page's class cards land there and each hub lists that class's resources, so it is a resource surface even though its path does not start with `/resources`). Leaving the class hubs out is what made the library look smaller than it is.
+- **Compare sections by page views, not visits.** Cloudflare's `count` is every page load of a path; `sum { visits }` only counts the load that *started* a session (referrer outside the site). Resource pages are mostly reached by clicking through the site, so the old "visits by section" chart under-reported them by construction — it was a bug in the metric, not in the traffic. The card now charts page views (`count`) and prints visits beside them in a table.
+- The breakdown has **two sections**, defined in `section-breakdown.ts` and used both for the panel and for the RUM query's path allowlist, so they cannot drift: `/resources` (the library) and `/classes` (**Class hubs** — the home page's class cards land there and each hub lists that class's resources, so it is a resource surface even though its path does not start with `/resources`). Leaving the class hubs out is what made the library look smaller than it is.
 - A cached payload written before the `pageViews` field existed is treated as a miss (`isCurrentPayload`), so a deploy never leaves five minutes of empty bars behind.
 
 ### Campaign sources — the third source
@@ -72,6 +72,16 @@ Cloudflare cannot say which *link* a visit came from. Reddit, Discord, Slack and
 - Because this is the app's own data, it keeps working regardless of what Cloudflare collects — it is also the only attribution that survives a stripped referrer.
 
 Share links look like `https://lambda-prep.pages.dev/?utm_source=reddit&utm_medium=post&utm_campaign=class10`.
+
+### Doxxmarks exits — what the hand-off sends, and where it went
+
+Lesson videos live on `doxxmarks.pages.dev`, so the panel also answers "how many students did we send there?".
+
+- Every link is built in one module (`src/lib/doxxmarks.ts`), which sets the board, the class slug and — from the subject dialog — the subject, then tags the URL `utm_source=lambda-prep` with `utm_medium` naming the entry point: **`lp`** for site chrome (hero, header nav, quick search, the 404 page) and **`class-hub`** for the class header button and the subject dialog. Doxxmarks' own analytics can therefore split site-wide traffic from class-level traffic.
+- ISC 11/12 are sent as `board=ICSE&class=icse-11|icse-12`, because that is how Doxxmarks publishes those classes; without the translation the link lands on its board chooser.
+- Clicking calls `recordOutboundClick` (`src/lib/outbound-server.ts`), which writes one row to `outbound_clicks` with destination, entry, board, class slug, subject, the path the student clicked from, and `cf-ipcountry`. The browser side (`outbound-tracking.ts`) guards with `sessionStorage`, so a student who clicks the same entry point twice in one session is counted once; the server re-normalises the values and rate limits per IP regardless.
+- The write is fire-and-forget: a failed insert never blocks or delays the navigation to Doxxmarks.
+- The **Sent to Doxxmarks** card groups the table by entry / board / class / subject and prints visitors plus the last click, in IST, for the selected range — with the all-time total underneath, because a quiet range would otherwise read as "nobody uses it".
 
 ### When the numbers disagree
 
@@ -95,13 +105,11 @@ The part worth reading twice.
 | `setup` | Setup | checkout, Node, Python, Drive credentials, crawl deps |
 | `crawl` | Drive crawl | the Drive tree walk |
 | `datasets` | Datasets | transform, split, sort, count |
-| `instarevision` | InstaRevision | re-applying the public revision-note links |
-| `covers` | Covers | joining Extramarks cover art onto every lesson and note |
 | `commit` | Commit | secret cleanup, diff summary, commit + push |
 | `runner` | Runner | GitHub's own “Set up job” / “Complete job” / `Post …` steps |
 | `other` | Other | any step whose name lost its tag |
 
-The `[Tag]` prefix wins; a light alias table (`crawl`/`drive`, `datasets`/`data`, `instarevision`/`revision`, `covers`/`thumbnail`, …) absorbs reasonable renames. An untagged step still shows up, under “Other” — the panel degrades instead of breaking.
+The `[Tag]` prefix wins; a light alias table (`crawl`/`drive`, `datasets`/`data`, …) absorbs reasonable renames. An untagged step still shows up, under “Other” — the panel degrades instead of breaking.
 
 ### What the panel does
 

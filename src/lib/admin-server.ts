@@ -1396,6 +1396,98 @@ export const getAdminCampaignSources = createServerFn({ method: "POST" })
   });
 
 // ---------------------------------------------------------------------
+// Outbound clicks: sessions this site sent to an external destination, read
+// from outbound_clicks (written by outbound-server.ts from a click handler in
+// the browser). Cloudflare's RUM dataset cannot answer this — the click is on
+// our page and the navigation happens on someone else's site — so the count
+// comes from our own table, one row per session per entry point.
+// ---------------------------------------------------------------------
+
+export type AdminOutboundRow = {
+  entry: string;
+  board: string | null;
+  classSlug: string | null;
+  subject: string | null;
+  /** Sessions that clicked this entry point (at most one row per session). */
+  clicks: number;
+  lastSeenAt: string;
+};
+
+export type AdminOutboundResult =
+  | {
+      configured: true;
+      rows: AdminOutboundRow[];
+      /** Sessions sent to the destination in the selected range. */
+      total: number;
+      /** Sessions ever recorded, so a quiet range is distinguishable from a
+       * feature nobody has used yet. */
+      allTimeTotal: number;
+    }
+  | { configured: false; reason: string };
+
+/** Doxxmarks exits for the requested lookback window, busiest first. */
+export const getAdminDoxxmarksExits = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = data as { range?: unknown };
+    if (d.range !== undefined && !isAdminRange(d.range)) throw new Error("Invalid range");
+    return { range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE };
+  })
+  .handler(async ({ data }): Promise<AdminOutboundResult> => {
+    await requirePasscode();
+    if (!sql) {
+      return {
+        configured: false,
+        reason: "DATABASE_URL isn't set on this deployment, so Doxxmarks exits can't be read.",
+      };
+    }
+
+    const since = new Date(Date.now() - RANGE_WINDOW_MS[data.range]);
+
+    try {
+      const rows = (await sql.query(
+        `SELECT entry, board, class_slug, subject, COUNT(*)::int AS clicks, MAX(created_at) AS last_seen_at
+           FROM outbound_clicks
+          WHERE destination = 'doxxmarks' AND created_at >= $1
+          GROUP BY entry, board, class_slug, subject
+          ORDER BY clicks DESC, last_seen_at DESC`,
+        [since.toISOString()],
+      )) as Array<{
+        entry: string;
+        board: string | null;
+        class_slug: string | null;
+        subject: string | null;
+        clicks: number;
+        last_seen_at: string;
+      }>;
+
+      const totals = (await sql.query(
+        `SELECT COUNT(*)::int AS all_time FROM outbound_clicks WHERE destination = 'doxxmarks'`,
+      )) as Array<{ all_time?: number }>;
+
+      const mapped: AdminOutboundRow[] = rows.map((row) => ({
+        entry: row.entry,
+        board: row.board,
+        classSlug: row.class_slug,
+        subject: row.subject,
+        clicks: Number(row.clicks) || 0,
+        lastSeenAt: new Date(row.last_seen_at).toISOString(),
+      }));
+
+      return {
+        configured: true,
+        rows: mapped,
+        total: mapped.reduce((sum, row) => sum + row.clicks, 0),
+        allTimeTotal: Number(totals[0]?.all_time) || 0,
+      };
+    } catch (error) {
+      return {
+        configured: false,
+        reason: `Could not read outbound_clicks from Neon: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  });
+
+// ---------------------------------------------------------------------
 // Manage Resources panel: real-time Drive folder listing + upload, backed
 // by the service-account credentials + target folder ID stored in Neon
 // (table: drive_integration) — never the static committed JSON datasets.

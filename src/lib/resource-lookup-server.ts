@@ -27,12 +27,12 @@ import {
 export type FileLocation = {
   name: string;
   classLabel: string;
-  /** Slug of the class the file was indexed under ("icse-10"). Null for a
-   * Doxxmarks note, whose class is resolved from the curriculum instead. */
+  /** Slug of the class the file was indexed under ("icse-10"), or null when
+   * the id is not in any dataset (an orphaned counter row). */
   classSlug: string | null;
   /** Display name of the subject, or null when the folder carries none. */
   subject: string | null;
-  /** Which collection the file came from; null for Doxxmarks notes. */
+  /** Which collection the file came from; null when the id is unknown. */
   source: "cisce" | "community" | null;
 };
 

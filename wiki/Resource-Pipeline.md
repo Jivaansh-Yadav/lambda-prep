@@ -1,6 +1,6 @@
 # Resource-Pipeline
 
-Everything under `src/data/resources-*`, `src/data/*/` shards, `src/data/*/manifest.json`, `resource-counts.json` and the `revisionNotes` inside `doxxmarks_resources.json` is **generated**. The pipeline is the only writer; editing a dataset by hand survives exactly one scheduled run.
+Everything under `src/data/resources-*`, `src/data/*/` shards, `src/data/*/manifest.json` and `resource-counts.json` is **generated**. The pipeline is the only writer; editing a dataset by hand survives exactly one scheduled run.
 
 ## Where the content comes from
 
@@ -12,9 +12,11 @@ Lambda/            (the Drive folder keeps its original name)
 │                       └── Community Resources/  (subject folders)
 ├── ICSE - X/           same shape
 ├── ISC - XI/           same shape
-├── ISC - XII/          same shape
-└── Doxxmarks/<class>/<subject>/<chapter> - InstaRevision.pdf
+├── ISC - XI/            same shape
+└── ISC - XII/           same shape
 ```
+
+There is no Doxxmarks folder in this tree any more — the lesson catalogue lives on `doxxmarks.pages.dev` (see [Doxxmarks-and-Revision-Notes](Doxxmarks-and-Revision-Notes)).
 
 Folder names are matched case-insensitively: `icse - ix` → `icse-9` via `CLASS_FOLDER_TO_SLUG`. An unrecognised top-level folder is logged and skipped rather than failing the crawl — that is how a new folder can be added to Drive without breaking the run.
 
@@ -22,19 +24,17 @@ Folder names are matched case-insensitively: `icse - ix` → `icse-9` via `CLASS
 
 | # | Stage | Script | Output |
 | --- | --- | --- | --- |
-| 1 | Crawl | `scripts/drive-crawl/generate-drive-json.js` | `scripts/drive-crawl/output/<class>/{cisce,community}.json`, `output/doxxmarks.json` |
+| 1 | Crawl | `scripts/drive-crawl/generate-drive-json.js` | `scripts/drive-crawl/output/<class>/{cisce,community}.json` |
 | 2 | Transform | `scripts/transform-resources.py` | `src/data/resources-{cisce,community}-<class>.json` |
 | 3 | Split | `scripts/split-resources-dataset.py` | `src/data/resources-<source>-<class>/{manifest.json,<subject>.json}` |
 | 4 | Sort | `scripts/sort-manifest-subjects.py` | same manifests, subjects reordered |
 | 5 | Count | `scripts/count-resources.py` | `src/data/resource-counts.json` |
 
-Then one independent step re-derives the Doxxmarks revision-note links from their public bucket paths — see [Doxxmarks-and-Revision-Notes](Doxxmarks-and-Revision-Notes).
-
 ### 1. Crawl
 
 - Auth: a Google **service account**, written to `scripts/drive-crawl/service-account.json` (gitignored) by `fetch-credentials.mjs`, which reads the key from Neon's `drive_integration.service_account_json` over the database's HTTP `/sql` endpoint — the same row the running app uses, so a rotated key cannot leave the crawl on a stale copy. `SERVICE_ACCOUNT` (raw key JSON) is only a fallback for a runner without database access.
 - Walk: breadth-first per folder, children sorted folders-first then alphabetically so file order is stable between runs. A stable order matters: an unstable crawl produces a diff every week even when nothing changed.
-- Resilience: the Doxxmarks walk uses its own exponential-backoff retries because it descends one very large tree, and a single `429`/`503` from the Drive API used to kill the whole run.
+- Resilience: every Drive request goes through `withRetry` — 50 ms doubling to a 10 s cap, six attempts — because a single `429`/`503` used to kill the whole run. A folder that still fails rethrows and aborts the crawl, so a partial tree is never published.
 - Output shape: the raw Drive tree (`id`, `name`, `mimeType`, `type`, `children`) — no transformation, no renaming. This is a build artifact; `scripts/drive-crawl/output/` is gitignored.
 
 ### 2. Transform
@@ -106,8 +106,8 @@ In CI the orchestrator is **not** used. `.github/workflows/update-resources.yml`
 - **Permissions:** `contents: write` (the job commits), nothing else.
 - **Concurrency:** group `update-resource-datasets`, `cancel-in-progress: false` — two crawls racing the same generated files would conflict and the second push would be rejected after a full run.
 - **Timeout:** `30` minutes. A hung Drive crawl used to be able to burn GitHub's 6-hour default.
-- **Step naming:** every step begins with a `[Category]` tag (`[Setup]`, `[Crawl]`, `[Datasets]`, `[InstaRevision]`, `[Covers]`, `[Commit]`). The admin tracker groups by that tag — **keep the tag when adding or renaming a step**, or it lands in “Other”.
-- **Credentials:** the only credential the run needs is the Drive service-account key in Neon, so the workflow holds exactly one secret — `DATABASE_URL`. `scripts/drive-crawl/neon-config.mjs` is the only reader: the `[Setup]` step's `fetch-credentials.mjs` pulls `drive_integration.service_account_json`, validates it has a `client_email` and `private_key`, and writes `scripts/drive-crawl/service-account.json` with mode `600`. Neither `[InstaRevision]` nor `[Covers]` needs a credential: both rewrite local JSON from public bucket paths and a public catalogue (`Jivaansh-Yadav/doxxmarks`). `[Covers]` does need the network — it `HEAD`s each candidate to drop the splashes Extramarks copies into hundreds of folders — so it carries `continue-on-error: true`: a catalogue or GCS hiccup must not fail a dataset refresh, and the cards fall back to icon tiles (see [Doxxmarks-and-Revision-Notes](Doxxmarks-and-Revision-Notes)).
+- **Step naming:** every step begins with a `[Category]` tag (`[Setup]`, `[Crawl]`, `[Datasets]`, `[Commit]`). The admin tracker groups by that tag — **keep the tag when adding or renaming a step**, or it lands in “Other”.
+- **Credentials:** the only credential the run needs is the Drive service-account key in Neon, so the workflow holds exactly one secret — `DATABASE_URL`. `scripts/drive-crawl/neon-config.mjs` is the only reader: the `[Setup]` step's `fetch-credentials.mjs` pulls `drive_integration.service_account_json`, validates it has a `client_email` and `private_key`, and writes `scripts/drive-crawl/service-account.json` with mode `600`. That is the only secret the workflow holds; there is no Extramarks token, no GCS signing key and no second catalogue to fetch.
 - **Commit step:** deletes the service-account file first, writes a `git diff --stat -- src/data` summary into the job summary, then commits only if something changed:
 
 ```bash

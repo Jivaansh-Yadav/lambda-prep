@@ -253,7 +253,7 @@ function Resources() {
         loading && !libraryHits ? (
           <div className="resource-file-grid resource-search-results" aria-busy="true">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="doxx-card doxx-card-skeleton" aria-hidden="true" />
+              <div key={i} className="content-card content-card-skeleton" aria-hidden="true" />
             ))}
           </div>
         ) : search.results.length ? (

@@ -45,7 +45,7 @@ describe('FrameStatus', () => {
     expect(document.querySelector('.frame-loading-message')?.getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('uses the activity wording for Doxxmarks players', () => {
+  it('uses the activity wording for embedded lesson players', () => {
     render(<FrameStatus {...props} variant="activity" />);
     expect(document.querySelector('.frame-loading-message-text')?.textContent).toBe('Booting the activity');
   });

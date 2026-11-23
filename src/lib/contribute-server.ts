@@ -32,7 +32,7 @@ import { allowedExtensionList, isTrustedDriveLink, resolveUploadType } from "./u
 // the same Drive tree the admin's Manage Resources panel already reads
 // from (see drive-integration-server.ts), kept separate from the root so
 // unreviewed submissions never mix with the live, crawled resource
-// folders (ICSE/ISC class folders, Doxxmarks, etc.).
+// folders (ICSE/ISC class folders etc.).
 const CONTRIBUTIONS_FOLDER_ID = "1X5rsacL42GgcwllB2VTSE1NYkWEVll-f";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // mirrors the admin upload limit

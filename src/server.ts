@@ -52,11 +52,6 @@ function isH3SwallowedErrorBody(body: string): boolean {
 //
 // The CSP is scoped to what the app actually loads:
 //   - drive.google.com        -> resource PDF previews (resource-watch)
-//   - storage.googleapis.com  -> Doxxmarks InstaRevision notes (public-bucket
-//                              PDF URLs, embedded via note-pdf-watch's iframe)
-//   - mscontent-gcp.extramarks.com -> Doxxmarks interactive lessons (iframe)
-//                              and lesson videos (HLS: manifest + segments via
-//                              hls.js, which fetches them with XHR)
 //   - fonts.googleapis.com / fonts.gstatic.com -> DM Sans + Manrope
 // 'unsafe-inline' for scripts is a deliberate, documented compromise: TanStack
 // Start inlines its hydration and stream-boundary scripts on every document,
@@ -88,13 +83,9 @@ const BASE_CSP_DIRECTIVES = [
   "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
-  // storage.googleapis.com serves the Extramarks cover art the Doxxmarks
-  // catalogue publishes (see scripts/drive-crawl/apply-doxx-thumbnails.mjs),
-  // alongside the revision-note PDFs already allowed in frame-src.
-  "img-src 'self' data: blob: https://drive.google.com https://storage.googleapis.com",
-  "media-src 'self' blob: https://mscontent-gcp.extramarks.com",
-  "connect-src 'self' https://mscontent-gcp.extramarks.com https://cloudflareinsights.com",
-  "frame-src 'self' https://drive.google.com https://docs.google.com https://mscontent-gcp.extramarks.com https://storage.googleapis.com",
+  "img-src 'self' data: blob: https://drive.google.com",
+  "connect-src 'self' https://cloudflareinsights.com",
+  "frame-src 'self' https://drive.google.com https://docs.google.com",
   "worker-src 'self' blob:",
   "form-action 'self'",
 ];
@@ -127,15 +118,14 @@ function securityHeaders(pathname: string): ReadonlyArray<readonly [string, stri
     // needs the IE/old-Safari-only fallback.
     ["X-Content-Type-Options", "nosniff"],
     ["Referrer-Policy", "strict-origin-when-cross-origin"],
-    // Fullscreen is granted to self and to the two embedded players: the
-    // resource viewer requests fullscreen on its own document, and the
-    // Extramarks player header and Drive PDF viewer each carry their own
-    // fullscreen button inside the frame. An iframe `allow` attribute can only
-    // narrow this policy, never widen it, so without these origins those
-    // buttons are dead controls.
+    // Fullscreen is granted to self and to the embedded PDF viewer: the
+    // resource viewer requests fullscreen on its own document, and Drive's
+    // PDF viewer carries its own fullscreen button inside the frame. An
+    // iframe `allow` attribute can only narrow this policy, never widen it,
+    // so without this origin that button is a dead control.
     [
       "Permissions-Policy",
-      'camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self "https://mscontent-gcp.extramarks.com" "https://drive.google.com")',
+      'camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self "https://drive.google.com")',
     ],
     ["Cross-Origin-Opener-Policy", "same-origin"],
   ];

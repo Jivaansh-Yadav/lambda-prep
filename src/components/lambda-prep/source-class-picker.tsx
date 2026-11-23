@@ -284,7 +284,7 @@ function GroupSection({ group, items, editorFolders, onPick }: {
   const shouldVirtualize = !isGeneral && !hasEditorFolders && expanded;
 
   return (
-    <section className={`doxx-notes resource-group${isGeneral || hasEditorFolders ? ' resource-group-editors-choice' : isFeaturedGroup ? ' resource-group-featured-glow' : ''}`}>
+    <section className={`content-notes resource-group${isGeneral || hasEditorFolders ? ' resource-group-editors-choice' : isFeaturedGroup ? ' resource-group-featured-glow' : ''}`}>
       <div className="resource-group-head">
         <h2>
           <FileText size={18} /> {label}
@@ -568,8 +568,8 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
   };
 
   const disclaimer = source === 'community' ? (
-    <div className="doxx-disclaimer">
-      <div className="doxx-disclaimer-title"><MessageCircle size={15} style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />About community resources</div>
+    <div className="content-disclaimer">
+      <div className="content-disclaimer-title"><MessageCircle size={15} style={{ display: 'inline', marginRight: 6, verticalAlign: -2 }} />About community resources</div>
       <p><CommunityLinks variant="disclaimer" /></p>
       {sourceCredit && <p style={{ marginTop: 8 }}>{sourceCredit}</p>}
     </div>
@@ -608,8 +608,8 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
       <BackLink to={sourcePath} search={{}} label={t('resources.backToClasses')} />
       <h1>{title}<span className="text-primary">.</span></h1>
       <p className="page-intro">{currentClass.board} · Class {currentClass.grade} · {t('resources.chooseSubject')}</p>
-      <div className="doxx-cards" aria-busy={manifestLoading}>
-        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="doxx-card doxx-card-skeleton" aria-hidden="true" />)}
+      <div className="content-cards" aria-busy={manifestLoading}>
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="content-card content-card-skeleton" aria-hidden="true" />)}
       </div>
     </main>;
   }
@@ -650,7 +650,7 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
       {classSearch.isActive ? (
         classHitsLoading && !classHits ? (
           <div className="resource-file-grid resource-search-results" aria-busy="true">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="doxx-card doxx-card-skeleton" aria-hidden="true" />)}
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="content-card content-card-skeleton" aria-hidden="true" />)}
           </div>
         ) : classSearch.results.length ? (
           classSearch.results.length > 60 ? (
@@ -699,17 +699,17 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
       ) : !subjectCards.length ? (
         <div className="empty-state"><BookOpen /><h3>{t('hub.empty.title')}</h3><p>{t('hub.empty.text')}</p></div>
       ) : (
-        <div className="doxx-cards">
+        <div className="content-cards">
           {subjectCards.map(s => {
             const isMisc = s.subject === MISC_LABEL;
             const isFeatured = s.subject === 'Featured';
             const meta = findSubjectMeta(s.subject);
             const Icon = isMisc ? Folder : isFeatured ? Sparkles : meta?.icon ?? FileText;
             return (
-              <Link key={s.subject} to={sourcePath} search={{ class: classSlug, subject: s.subject, stream }} className={`doxx-card${isMisc || isFeatured ? ' tone-rose' : meta ? ` tone-${meta.tone}` : ''}${isFeatured ? ' doxx-card-featured-glow' : ''}`}>
-                <span className="subject-icon doxx-subject-icon"><Icon size={22} strokeWidth={1.6} /></span>
-                <span className="doxx-card-title">{s.subject}</span>
-                <span className="doxx-card-meta">{s.count} {t('resources.filesLabel')}</span>
+              <Link key={s.subject} to={sourcePath} search={{ class: classSlug, subject: s.subject, stream }} className={`content-card${isMisc || isFeatured ? ' tone-rose' : meta ? ` tone-${meta.tone}` : ''}${isFeatured ? ' content-card-featured-glow' : ''}`}>
+                <span className="subject-icon content-subject-icon"><Icon size={22} strokeWidth={1.6} /></span>
+                <span className="content-card-title">{s.subject}</span>
+                <span className="content-card-meta">{s.count} {t('resources.filesLabel')}</span>
               </Link>
             );
           })}
@@ -741,7 +741,7 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
         <h1>{subject}<span className="text-primary">.</span></h1>
         <p className="page-intro">{currentClass.board} · Class {currentClass.grade} · {title}</p>
         <div className="resource-file-grid" aria-busy={subjectLoading}>
-          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="doxx-card doxx-card-skeleton" aria-hidden="true" />)}
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="content-card content-card-skeleton" aria-hidden="true" />)}
         </div>
       </main>;
     }
@@ -752,7 +752,7 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
 
     if (activeFile) {
       return <main className="container content-page">
-        <button type="button" className="back-link" onClick={closeFile}><ArrowLeft size={15} /> {t('doxx.back')}</button>
+        <button type="button" className="back-link" onClick={closeFile}><ArrowLeft size={15} /> {t('nav.back')}</button>
         <h1>{subject}<span className="text-primary">.</span></h1>
         <p className="page-intro">{currentClass.board} · Class {currentClass.grade} · {title}</p>
         <ResourceWatch
@@ -874,7 +874,7 @@ export function SourceClassPicker({ source, classSlug, subject, file, stream, on
     {sourceSearch.isActive ? (
       sourceHitsLoading && !sourceHits ? (
         <div className="resource-file-grid resource-search-results" aria-busy="true">
-          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="doxx-card doxx-card-skeleton" aria-hidden="true" />)}
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="content-card content-card-skeleton" aria-hidden="true" />)}
         </div>
       ) : sourceSearch.results.length ? (
         sourceSearch.results.length > 60 ? (

@@ -12,6 +12,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 
 import { Header, Footer, ContactMessageDialog } from "@/components/lambda-prep/shell";
+import { DoxxmarksLink } from "@/components/lambda-prep/doxxmarks-link";
 import { SITE_URL, OG_IMAGE } from "@/lib/lambda-prep";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -132,13 +133,13 @@ function NotFoundComponent() {
           >
             {t('notfound.exploreResources')}
           </Link>
-          <Link
-            to="/doxxmarks"
-            search={{}}
+          <DoxxmarksLink
+            entry="lp"
+            board="ICSE"
             className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             {t('notfound.openDoxxmarks')}
-          </Link>
+          </DoxxmarksLink>
         </div>
         <div className="mt-3">
           <button

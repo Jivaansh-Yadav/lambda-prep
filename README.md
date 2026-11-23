@@ -26,11 +26,11 @@
 
 ## What it is
 
-Lambda Prep is a study-resource portal for **ICSE 9, ICSE 10, ISC 11 and ISC 12**. Each class carries two separate catalogues — **CISCE** (what the board publishes) and **Community** (what students contribute) — plus a **Doxxmarks** area where chapter revision notes and video lessons hang off the same Drive root.
+Lambda Prep is a study-resource portal for **ICSE 9, ICSE 10, ISC 11 and ISC 12**. Each class carries two separate catalogues — **CISCE** (what the board publishes) and **Community** (what students contribute) — on one shared Drive root. Chapter video lessons live on the separate **Doxxmarks** site, which every "Open Doxxmarks" link opens with `utm_source=lambda-prep` and `utm_medium=lp` (site chrome) or `utm_medium=class-hub` (class pages) so its traffic can be traced back to the exact entry point.
 
 Every file has a rating, a view count, a download count and a share action that persist across sessions. The landing page ranks **Editor's Choice** from those ratings rather than a hand-written list, so the top of the homepage follows what students actually open.
 
-Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the admin panel) re-crawls Google Drive, rebuilds every JSON dataset, re-applies the Doxxmarks revision-note links, and commits the result. The admin panel can trigger the same run and shows it progressing **category by category** while it happens.
+Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the admin panel) re-crawls Google Drive, rebuilds every JSON dataset, and commits the result. The admin panel can trigger the same run and shows it progressing **category by category** while it happens.
 
 ---
 
@@ -41,7 +41,6 @@ Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the a
 | `/` | Landing page: four class cards, Editor's Choice, per-class counts |
 | `/classes/$classId` | One class, its two catalogues, subjects in Featured-first then A–Z order |
 | `/resources` | Browse surface; `/resources/cisce` and `/resources/community` scope it |
-| `/doxxmarks` | Chapter-wise revision-notes library: classes → subjects → chapters → notes |
 | `/contribute` | Student submission form, plus contact and comment server functions |
 | `/admin` | Passcode-gated dashboard: analytics, dataset pipeline, moderation |
 | `/sitemap.xml` | Real route; a hand-kept entry table (path, priority, `lastmod`), `<loc>` built from `SITE_URL` |
@@ -57,7 +56,7 @@ Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the a
 - **Virtualised grids** — `@tanstack/react-virtual`; a group can hold hundreds of files.
 - **Fuzzy search** — Fuse.js, indexed per class rather than platform-wide.
 - **Real media playback** — `@videojs/react` with an HLS source; lectures play in place.
-- **Doxxmarks player** — chapter lessons and PDF revision notes embedded, with a playlist and a fullscreen-safe toolbar.
+- **Doxxmarks hand-off** — every lesson link leaves the app for `doxxmarks.pages.dev` with the active board, class and subject in the query string, tagged with UTMs; each click is logged to `outbound_clicks` and summarised in the admin panel.
 - **Trending strip** — the five most-opened files in a subject, above its grid, filled by widening the window from today out to a week.
 - **Passcode admin** — analytics and resource activity on one 24h/7d/14d/30d selector (24h by default), a live pipeline tracker, Drive folder attachment, contribution and message moderation.
 - **Sortable activity lists** — ratings, views, shares and comments open on their timestamp, newest first, and every header toggles direction; a row with no timestamp sinks instead of pretending to be the epoch.
@@ -79,13 +78,12 @@ Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the a
                 split-resources-dataset.py    → sharded datasets per subject
                 sort-manifest-subjects.py     → Featured first, then A–Z
                 count-resources.py            → resource-counts.json
-[InstaRevision] apply public revision-note links → doxxmarks_resources.json
 [Commit]        drop credentials · diff summary · commit + push
 ```
 
 Fail-fast by design: a failed crawl aborts before anything is transformed, so a dataset is never half-updated. A `concurrency` group stops two runs racing the same files, and a 30-minute job timeout stops a hung crawl burning the default six hours.
 
-The Doxxmarks catalogue (`doxxmarks_resources.json`) is crawled per subject by hand with `scripts/crawl-curriculum.mjs`, not by the workflow — it needs an Extramarks teacher token. `scripts/drive-crawl/sync-doxxmarks-videos.mjs` fills it from the doxxmarks app's own catalogue when the two drift; see [Doxxmarks-and-Revision-Notes](wiki/Doxxmarks-and-Revision-Notes#videos-the-crawl-used-to-lose).
+The dataset is entirely Drive-derived: `scripts/drive-crawl/generate-drive-json.js` walks the Drive root, `transform-resources.py` turns that into the shipped JSON. Nothing outside Drive feeds it.
 
 ---
 
@@ -100,15 +98,15 @@ TanStack Start · React 19 · Vite 8 · Tailwind CSS 4 · `@neondatabase/serverl
 ```
 lambda-prep/
 ├── src/routes/                 # index · classes.$classId · resources[.cisce|.community]
-│                               # doxxmarks · contribute · admin · sitemap[.]xml
+│                               # contribute · admin · sitemap[.]xml
 ├── src/lib/                    # db · brand · i18n · redirects · workflow-progress
 │                               # time-labels (IST formatters) · table-sort
 │                               # qr-code + qr-art (share popup scan codes)
 │                               # *-server.ts: admin, drive, github, ratings, views…
-├── src/data/                   # doxxmarks_resources.json · resources-*.json · manifests
+├── src/data/                   # resources-*.json · manifests · resource-counts.json
 ├── scripts/
 │   ├── generate-all-resources.js     # local 5-step orchestrator
-│   ├── drive-crawl/                  # Drive crawler + revision-note links
+│   ├── drive-crawl/                  # Drive crawler
 │   ├── transform-resources.py
 │   ├── split-resources-dataset.py
 │   ├── sort-manifest-subjects.py
@@ -161,7 +159,7 @@ Add `VITE_CF_BEACON_TOKEN` to the host's build environment only if the deploymen
 | --- | --- |
 | [Architecture](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Architecture) | Request path, SSR entry, routing, data loading, error handling |
 | [Resource-Pipeline](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Resource-Pipeline) | Every crawl/transform step, sharding rules, failure modes |
-| [Doxxmarks-and-Revision-Notes](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Doxxmarks-and-Revision-Notes) | Chapter curriculum and the public-bucket revision-note URLs |
+| [Doxxmarks-and-Revision-Notes](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Doxxmarks-and-Revision-Notes) | Why the lesson catalogue lives on a separate site, and the UTM contract on every link |
 | [Admin-and-Analytics](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Admin-and-Analytics) | Passcode gate, KPIs, category-grouped run tracker |
 | [Database](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Database) | Tables, counter semantics, cache tables, degraded mode |
 | [Deployment](https://github.com/Jivaansh-Yadav/lambda-prep/wiki/Deployment) | Cloudflare Pages build, headers, env vars, DNS |

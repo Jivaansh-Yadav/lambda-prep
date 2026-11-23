@@ -36,14 +36,14 @@ This file is the SSR entry (`tanstackStart.server.entry = "server"` in `vite.con
 ### Security headers, and the two deliberate omissions
 
 - **No `X-Frame-Options`.** The app is embedded in Eazo previews and in its own share links. `frame-ancestors` in the CSP is the modern control and is explicitly allowlisted (`'self'`, `https://*.e2b.app`, `https://*.eazo.dev`, `https://*.eazo.ai`). Per the spec, an enforced `frame-ancestors` makes browsers ignore `X-Frame-Options`, but a per-response `SAMEORIGIN` on a route that skipped CSP would silently re-block the preview iframe — so the header is omitted and the allowlist lives in one place.
-- **`fullscreen=(self …)` is not empty.** The resource viewer requests fullscreen on its own document, and the Extramarks player and the Drive PDF viewer each carry their own fullscreen button *inside* a frame. An `<iframe allow="fullscreen">` can only narrow the header policy, never widen it, so those two origins are listed explicitly. Leaving `fullscreen=()` makes those buttons dead controls.
+- **`fullscreen=(self …)` is not empty.** The resource viewer requests fullscreen on its own document, and the Drive PDF viewer carries its own fullscreen button *inside* a frame. An `<iframe allow="fullscreen">` can only narrow the header policy, never widen it, so that origin is listed explicitly. Leaving `fullscreen=()` makes the button a dead control.
 
 `public/_headers` repeats the same policy for hosts that serve static files without the worker. **Keep the CSP in the file byte-identical to `CONTENT_SECURITY_POLICY` in `src/server.ts`.** Cloudflare Pages also appends a Nitro fallback rule to `_headers` at build time for unmatched routes.
 
 The CSP itself is scoped to what the app really uses:
 
-- `frame-src` — `drive.google.com` (embedded PDFs), `mscontent-gcp.extramarks.com` (interactive classes), `storage.googleapis.com` (revision-note PDFs from the public mirror bucket).
-- `connect-src` — Extramarks, `cloudflareinsights.com` (only needed if a Web Analytics snippet is ever added back; Cloudflare Pages collects page loads without one).
+- `frame-src` — `drive.google.com` and `docs.google.com` (embedded PDFs).
+- `connect-src` — `'self'` plus `cloudflareinsights.com` for the RUM beacon.
 - `script-src` — `static.cloudflareinsights.com`; `img-src` — `drive.google.com` thumbnails.
 
 ## Routing
@@ -55,14 +55,13 @@ File-based, one file per route, `src/routes/__root.tsx` is the only root layout.
 | `index.tsx` | `/` | Landing: class cards, Editor's Choice, counts |
 | `classes.$classId.tsx` | `/classes/:classId` | Slug is `icse-9`, `icse-10`, `isc-11`, `isc-12` |
 | `resources.tsx` + `resources.index/cisce/community.tsx` | `/resources[/cisce|/community]` | `/resources` is the global filename search; the other two are the source-scoped browsers, sharing one component |
-| `doxxmarks.tsx` | `/doxxmarks` | Curriculum browser + player |
 | `contribute.tsx` | `/contribute` | Submission form |
 | `admin.tsx` | `/admin` | Passcode gate, dashboard, section pages via `?section=` |
 | `sitemap[.]xml.ts` | `/sitemap.xml` | Real handler, generated per request |
 
 Query-parameter conventions matter because share links depend on them:
 
-- `/doxxmarks?class=icse-10&subject=Biology&chapter=0&note=0` — `class` is a slug, `subject` is a display name, `chapter` and `note` are **indices** into the subject's chapter list and that chapter's note list.
+- `/classes/isc-11` — the class hub. Clicking a subject opens a dialog holding the class-scoped Doxxmarks link and the two resource catalogues; that dialog is local state, not a URL parameter.
 - `/resources?q=phy+2024` — only the query is in the URL (written with `history.replaceState`), so a search survives opening a file and Back returns to the same list. Structured filters are component state. See [Resource-Search](Resource-Search).
 - `/resources/community?class=icse-10&subject=Physics&file=<id>` — the source browsers are the ones with additive filters in the URL; `file` opens that document.
 
@@ -75,7 +74,6 @@ Datasets are static JSON under `src/data/`, imported through `src/lib/resources-
 - `manifest.json` per class — subjects, their shard file (if any), Featured ordering and counts.
 - `resources-{cisce,community}-<class>.json` — the whole catalogue for a class, **or** a directory of per-subject shards once it crosses the size threshold (see [Resource-Pipeline](Resource-Pipeline)).
 - `resource-counts.json` — per class, per source, per subject totals written by `scripts/count-resources.py`; a build/reporting artifact. The class page's own total is summed from the manifest counts, so the two agree only if both count files inside `editorFolders` (see [Resource-Pipeline](Resource-Pipeline)).
-- `doxxmarks_resources.json` — the Doxxmarks curriculum (see [Doxxmarks-and-Revision-Notes](Doxxmarks-and-Revision-Notes)).
 
 Because the datasets ship as ES modules they are code-split with the route that needs them: opening ISC 12 never downloads ICSE 9's catalogue. Inside a catalogue, virtualisation (`@tanstack/react-virtual`) keeps a 400-file group cheap to scroll, and Fuse.js indexes only the active catalogue.
 
@@ -100,7 +98,7 @@ The Trending strip is the one thing on a resource page that is not in those JSON
 src/
 ├── routes/           # one file per URL (see the table above)
 ├── components/
-│   ├── lambda-prep/  # shell, resource/note/doxx players, rating, sharing, grids
+│   ├── lambda-prep/  # shell, resource player, doxxmarks link, rating, sharing, grids
 │   └── ui/           # shadcn-style primitives
 ├── lib/
 │   ├── lambda-prep.ts  # SITE_URL, pageHead(), class/subject metadata helpers
@@ -108,7 +106,8 @@ src/
 │   ├── redirects.ts  # /drive and /github destinations
 │   ├── db.ts         # Neon client singleton
 │   ├── i18n.tsx      # dictionaries + t()
-│   ├── resources-data.ts / curriculum.ts / resource-lookup-server.ts
+│   ├── resources-data.ts / doxxmarks.ts / outbound-tracking.ts
+│   ├── resource-lookup-server.ts
 │   ├── advanced-search.ts    # filename search: parse, score, facets, highlight
 │   ├── recent-searches.ts    # localStorage recents (max 5)
 │   ├── workflow-progress.ts  # GitHub step → category mapping
@@ -118,7 +117,8 @@ src/
 │   ├── qr-art.ts             # module grid -> rounded SVG path data
 │   ├── qr-tables.ts          # ISO 18004 block + alignment tables (data only)
 │   └── *-server.ts   # server functions: admin, drive, github, cloudflare,
-│                     # ratings, views, shares, comments, contact, contribute
+│                     # ratings, views, shares, comments, contact, contribute,
+│                     # outbound clicks
 ├── data/             # committed datasets (pipeline output)
 ├── styles.css        # design tokens + component CSS
 └── server.ts         # SSR entry (short links, error normalisation, headers)

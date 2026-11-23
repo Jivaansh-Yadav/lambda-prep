@@ -5,7 +5,6 @@ import { SECTION_DEFS, SECTION_PATH_LIKE, buildSections } from "./section-breakd
 describe("buildSections", () => {
   it("sums page views and visits per section, independently", () => {
     const sections = buildSections([
-      { path: "/doxxmarks", pageViews: 120, visits: 90 },
       { path: "/resources", pageViews: 10, visits: 0 },
       { path: "/resources/cisce", pageViews: 40, visits: 2 },
       { path: "/resources/community", pageViews: 30, visits: 1 },
@@ -14,24 +13,23 @@ describe("buildSections", () => {
     ]);
 
     expect(sections).toEqual([
-      { label: "Doxxmarks", path: "/doxxmarks", pageViews: 120, visits: 90 },
       { label: "Resource library", path: "/resources", pageViews: 80, visits: 3 },
       { label: "Class hubs", path: "/classes", pageViews: 500, visits: 15 },
     ]);
   });
 
-  it("keeps resources ahead of doxxmarks when measured in page views but behind in visits", () => {
-    // The exact shape of the bug this replaces: section totals compared by
-    // `visits` made the library look smaller than Doxxmarks even though it was
-    // being viewed more, because its loads come from inside the site.
-    const sections = buildSections([
-      { path: "/doxxmarks", pageViews: 50, visits: 45 },
+  it("keeps page views and visits as separate measures", () => {
+    // The exact shape of the bug this replaces: comparing sections by `visits`
+    // alone made pages that are reached from inside the site look smaller than
+    // pages that are opened from external links, because only the latter start
+    // a session.
+    const [resources, classes] = buildSections([
       { path: "/resources/cisce", pageViews: 300, visits: 4 },
+      { path: "/classes/isc-12", pageViews: 50, visits: 45 },
     ]);
-    const [doxx, resources] = sections;
 
-    expect(resources!.pageViews).toBeGreaterThan(doxx!.pageViews);
-    expect(resources!.visits).toBeLessThan(doxx!.visits);
+    expect(resources!.pageViews).toBeGreaterThan(classes!.pageViews);
+    expect(resources!.visits).toBeLessThan(classes!.visits);
   });
 
   it("ignores paths that belong to no section", () => {

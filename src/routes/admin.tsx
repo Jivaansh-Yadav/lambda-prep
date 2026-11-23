@@ -63,6 +63,7 @@ import {
   getAdminTraffic,
   getAdminRum,
   getAdminCampaignSources,
+  getAdminDoxxmarksExits,
   getManageResources,
   triggerDatasetUpdate,
   getDatasetUpdateStatus,
@@ -80,6 +81,7 @@ import {
   type AdminTrafficResult,
   type AdminRumResult,
   type AdminCampaignResult,
+  type AdminOutboundResult,
   type RumBreakdownItem,
   type ManageResourcesResult,
   type AdminResourceStatsResult,
@@ -173,6 +175,8 @@ function AdminPage() {
   const [rumLoading, setRumLoading] = useState(false);
   const [campaignResult, setCampaignResult] = useState<AdminCampaignResult | null>(null);
   const [campaignLoading, setCampaignLoading] = useState(false);
+  const [doxxResult, setDoxxResult] = useState<AdminOutboundResult | null>(null);
+  const [doxxLoading, setDoxxLoading] = useState(false);
 
   async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
@@ -189,6 +193,8 @@ function AdminPage() {
         // effects can fire and set sticky errors).
         setResult(null);
         setRumResult(null);
+        setCampaignResult(null);
+        setDoxxResult(null);
         setAuthed(true);
         await loadTraffic(range);
       } else if (check.lockedOutSeconds) {
@@ -329,12 +335,41 @@ function AdminPage() {
     }
   }
 
+  async function loadDoxx(forRange: AdminRange) {
+    setDoxxLoading(true);
+    try {
+      const data = await getAdminDoxxmarksExits({ data: { range: forRange } });
+      setDoxxResult(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message.trim() : '';
+      if (/unauthor/i.test(message)) {
+        setError('Passcode rejected — unlock again.');
+        setAuthed(false);
+        void lockAdminSession();
+        setDoxxResult(null);
+        return;
+      }
+      setDoxxResult({
+        configured: false,
+        reason:
+          message && message.length <= 200
+            ? `Could not load Doxxmarks exits: ${message}`
+            : 'Could not load Doxxmarks exits. Try again.',
+      });
+    } finally {
+      setDoxxLoading(false);
+    }
+  }
+
   // Same lazy pattern as the RUM panel: Neon-only, but there's no reason to
   // query it on the dashboard page where the table isn't rendered.
   useEffect(() => {
     if (!authed) return;
     if (openSection === 'analytics' && !campaignResult && !campaignLoading) {
       void loadCampaign(range);
+    }
+    if (openSection === 'analytics' && !doxxResult && !doxxLoading) {
+      void loadDoxx(range);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSection, authed]);
@@ -349,11 +384,13 @@ function AdminPage() {
     setResult(null);
     setRumResult(null);
     setCampaignResult(null);
+    setDoxxResult(null);
     if (authed) {
       void loadTraffic(next);
       if (openSection === 'analytics') {
         void loadRum(next);
         void loadCampaign(next);
+        void loadDoxx(next);
       }
     }
   }
@@ -369,8 +406,10 @@ function AdminPage() {
     void loadTraffic(range, true);
     if (openSection === 'analytics') {
       void loadRum(range, true);
-      // Campaign sources read Neon directly — nothing cached to bypass.
+      // Campaign sources and outbound clicks read Neon directly — nothing
+      // cached to bypass.
       void loadCampaign(range);
+      void loadDoxx(range);
     }
   }
 
@@ -608,6 +647,8 @@ function AdminPage() {
               }
               trackedHost={result?.configured ? result.trackedHost : null}
             />
+
+            <DoxxmarksExitsSection result={doxxResult} loading={doxxLoading} range={range} />
           </>
         )}
 
@@ -1035,6 +1076,110 @@ function CampaignSourcesSection({
             </p>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Sessions this site handed to Doxxmarks. The number cannot come from
+ * Cloudflare: the click is on a Lambda Prep page and the navigation happens on
+ * doxxmarks.pages.dev, so the app counts the click itself
+ * (src/lib/outbound-tracking.ts → src/lib/outbound-server.ts), one row per
+ * session per entry point.
+ */
+function DoxxmarksExitsSection({
+  result,
+  loading,
+  range,
+}: {
+  result: AdminOutboundResult | null;
+  loading: boolean;
+  range: AdminRange;
+}) {
+  if (loading && !result) {
+    return <p className="mt-6 text-sm text-muted-foreground">Loading Doxxmarks exits…</p>;
+  }
+  if (!result) return null;
+
+  if (!result.configured) {
+    return (
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Sent to Doxxmarks</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">{result.reason}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle>Sent to Doxxmarks — {ADMIN_RANGE_LABEL[range]}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground">
+          {result.total.toLocaleString()} {result.total === 1 ? 'visitor' : 'visitors'} opened Doxxmarks from this site
+          {result.allTimeTotal > result.total && (
+            <> · {result.allTimeTotal.toLocaleString()} recorded all time</>
+          )}
+          .
+        </p>
+
+        {result.rows.length === 0 ? (
+          <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+            <p>No Doxxmarks clicks in this window yet.</p>
+            <p className="text-xs">
+              Buttons on the landing page, the header, quick search and the 404 page record entry{' '}
+              <span className="font-mono">lp</span>; the Open Doxxmarks action on a class page records{' '}
+              <span className="font-mono">class-hub</span>.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>From</TableHead>
+                  <TableHead>Board</TableHead>
+                  <TableHead>Class</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead className="text-right">Visitors</TableHead>
+                  <TableHead className="text-right">Last click</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {result.rows.map((row) => (
+                  <TableRow key={`${row.entry}|${row.board ?? ''}|${row.classSlug ?? ''}|${row.subject ?? ''}`}>
+                    <TableCell className="font-mono text-xs text-foreground">
+                      {row.entry === 'class-hub' ? 'class-hub' : 'lp'}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{row.board ?? '—'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{row.classSlug ?? '—'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{row.subject ?? '—'}</TableCell>
+                    <TableCell className="text-right font-mono text-xs text-foreground">
+                      {row.clicks.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right text-xs text-muted-foreground">
+                      {formatRelativeTime(row.lastSeenAt)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        <p className="mt-4 text-xs text-muted-foreground">
+          Counted by this app, not by Cloudflare: a click that opens another site in a new tab never reaches this
+          site&apos;s page views. Each link carries <span className="font-mono">utm_source=lambda-prep</span> and an
+          entry-specific <span className="font-mono">utm_medium</span> (<span className="font-mono">lp</span> or{' '}
+          <span className="font-mono">class-hub</span>), so Doxxmarks&apos; own analytics can see the same arrivals.
+          One row per session, so a repeat click in the same tab is not counted twice.
+        </p>
       </CardContent>
     </Card>
   );
@@ -1800,7 +1945,7 @@ function ManageResourcesCard() {
             )}
 
             {path.length > 0 && (
-              <nav className="doxx-breadcrumb manage-resources-breadcrumb" aria-label="Breadcrumb">
+              <nav className="content-breadcrumb manage-resources-breadcrumb" aria-label="Breadcrumb">
                 <button type="button" onClick={() => goToCrumb(-1)} className={path.length === 0 ? 'crumb-current' : ''}>
                   Root
                 </button>
@@ -1822,13 +1967,13 @@ function ManageResourcesCard() {
             {state.files.length === 0 ? (
               <p className="text-sm text-muted-foreground">This folder is empty.</p>
             ) : (
-              <div key={path.map((p) => p.id).join('/')} className={`doxx-list manage-resources-list slide-${direction}`}>
+              <div key={path.map((p) => p.id).join('/')} className={`content-list manage-resources-list slide-${direction}`}>
                 {state.files.map((f) => {
                   const folder = isDriveFolder(f);
                   const Icon = folder ? Folder : FILE_KIND_ICON[getFileKind(f.name)];
                   const isRenaming = renamingId === f.id;
                   return (
-                    <div key={f.id} className="doxx-row manage-resources-row manage-resources-row-editable">
+                    <div key={f.id} className="content-row manage-resources-row manage-resources-row-editable">
                       {isRenaming ? (
                         <span className="manage-resources-row-main">
                           <Icon size={18} strokeWidth={1.6} className="manage-resources-row-icon" />
@@ -1854,16 +1999,16 @@ function ManageResourcesCard() {
                           }}
                         >
                           <Icon size={18} strokeWidth={1.6} className="manage-resources-row-icon" />
-                          <span className="doxx-row-title">{f.name}</span>
+                          <span className="content-row-title">{f.name}</span>
                         </button>
                       )}
 
                       {!isRenaming && (
                         <>
-                          <span className="doxx-row-meta manage-resources-row-meta">
+                          <span className="content-row-meta manage-resources-row-meta">
                             {folder ? '—' : formatBytes(f.size)}
                           </span>
-                          <span className="doxx-row-meta manage-resources-row-meta">
+                          <span className="content-row-meta manage-resources-row-meta">
                             {f.modifiedTime ? formatDayLabel(f.modifiedTime) : '—'}
                           </span>
                         </>

@@ -25,15 +25,14 @@ node scripts/generate-all-resources.js --skip-crawl   # rebuild datasets from la
 - One file per URL in `src/routes/`. `routeTree.gen.ts` is generated — never edit it.
 - Every route defines `head` via `pageHead(title, description, path)` from `src/lib/lambda-prep.ts`, so canonical/OG metadata cannot be forgotten.
 - Dynamic segments use `$` (`classes.$classId.tsx`), splats use `$` (`$.tsx` → `_splat`). Never `:id` or `*`.
-- Shareable state goes in the URL (see `/doxxmarks` and `/resources`), not in component state.
+- Shareable state goes in the URL (see `/resources` and its `q`, `class`, `subject`, `file` parameters), not in component state.
 
 ### Copy and i18n
 - Every user-facing string lives in `src/lib/i18n.tsx` under both `en-US` and `zh-CN`. A literal string in JSX is a bug.
-- Keys are grouped by surface (`faq.*`, `share.*`, `doxx.*`). Adding a key means adding it to both dictionaries.
+- Keys are grouped by surface (`faq.*`, `share.*`, `hub.*`). Adding a key means adding it to both dictionaries.
 
 ### Data
 - `src/data/*` is generated. If you need different content, change the pipeline, not the JSON.
-- Only `doxxmarks_resources.json`'s chapter skeleton and `insta-revision-sources.json` are hand-structured; the revision-note URLs are derived from the latter.
 - Counts come from `resource-counts.json`; never compute a total on the client.
 
 ### Server functions
@@ -104,7 +103,7 @@ Rule: format the files you touch. Do not run a repo-wide `--fix` in a feature PR
 | Landing page | `src/routes/index.tsx` + `src/styles.css` |
 | Class/resources browsing | `src/routes/resources*.tsx`, `src/components/lambda-prep/virtual-file-grid.tsx` |
 | Resource search | `src/lib/advanced-search.ts` + `src/hooks/use-advanced-file-search.ts` (see [Resource-Search](Resource-Search)) |
-| Doxxmarks player or notes | `src/components/lambda-prep/{doxx-watch,note-pdf-watch}.tsx` |
+| Where Doxxmarks links go | `src/lib/doxxmarks.ts` + `src/components/lambda-prep/doxxmarks-link.tsx` |
 | Admin dashboard | `src/routes/admin.tsx` (sections are components in the same file) |
 | Counters/ratings | `src/lib/{views,ratings,shares}-server.ts` |
 | A date or time label | `src/lib/time-labels.ts` |

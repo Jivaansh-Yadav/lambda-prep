@@ -33,8 +33,8 @@ const REFERENCE_HI_MASK0 = [
 const render = (matrix: QrMatrix) =>
   matrix.modules.map((row) => row.map((module) => (module ? "1" : "0")).join(""));
 
-const DOXXMARKS_URL =
-  "https://lambda-prep.pages.dev/doxxmarks?class=class-10&subject=Computer%20Applications&chapter=3&note=4";
+const RESOURCE_URL =
+  "https://lambda-prep.pages.dev/resources?class=icse-10&subject=Computer%20Applications&file=1AbCdEfGhIjKlMnOpQrStUvWxYz012345";
 
 describe("encodeQr", () => {
   it("produces the reference matrix for a known payload", () => {
@@ -45,14 +45,14 @@ describe("encodeQr", () => {
   });
 
   it("is deterministic across calls, mask included", () => {
-    const first = encodeQr(DOXXMARKS_URL);
-    const second = encodeQr(DOXXMARKS_URL);
+    const first = encodeQr(RESOURCE_URL);
+    const second = encodeQr(RESOURCE_URL);
     expect(second.mask).toBe(first.mask);
     expect(render(second)).toEqual(render(first));
   });
 
   it("draws the three finder patterns", () => {
-    const { modules, size } = encodeQr(DOXXMARKS_URL);
+    const { modules, size } = encodeQr(RESOURCE_URL);
     const corners: Array<[number, number]> = [
       [0, 0],
       [size - 7, 0],
@@ -78,7 +78,7 @@ describe("encodeQr", () => {
   });
 
   it("alternates the timing patterns", () => {
-    const { modules, size } = encodeQr(DOXXMARKS_URL);
+    const { modules, size } = encodeQr(RESOURCE_URL);
     for (let i = 8; i < size - 8; i++) {
       expect(modules[6]?.[i]).toBe(i % 2 === 0);
       expect(modules[i]?.[6]).toBe(i % 2 === 0);
@@ -87,14 +87,14 @@ describe("encodeQr", () => {
 
   it("grows the version to fit the payload", () => {
     const short = encodeQr("https://lambda-prep.pages.dev/drive", { ecc: "M" });
-    const long = encodeQr(`${DOXXMARKS_URL}&pad=${"z".repeat(120)}`, { ecc: "M" });
+    const long = encodeQr(`${RESOURCE_URL}&pad=${"z".repeat(120)}`, { ecc: "M" });
     expect(short.version).toBeLessThan(long.version);
     expect(long.size).toBe(long.version * 4 + 17);
   });
 
   it("needs a bigger version for stronger error correction", () => {
-    const atM = encodeQr(DOXXMARKS_URL, { ecc: "M" });
-    const atH = encodeQr(DOXXMARKS_URL, { ecc: "H" });
+    const atM = encodeQr(RESOURCE_URL, { ecc: "M" });
+    const atH = encodeQr(RESOURCE_URL, { ecc: "H" });
     expect(atH.ecc).toBe("H");
     expect(atH.version).toBeGreaterThan(atM.version);
   });

@@ -190,12 +190,10 @@ async function getFolder(folderId, currentPath = "") {
 }
 
 // 🏁 Main: crawl the unified Lambda Prep Drive root. Its direct children are
-// one folder per class ("ICSE - IX", "ICSE - X", "ISC - XI", "ISC - XII")
-// plus a "Doxxmarks" folder (InstaRevision chapter notes, nested the same
-// way: Doxxmarks / <class folder name> / <subject> / <chapter> -
-// InstaRevision.pdf). Each class folder contains "CISCE Resources" (board
-// publications: APF/CFQ/PYQP/SQP/Syllabus type-folders) and
-// "Community Resources" (subject-named folders directly).
+// one folder per class ("ICSE - IX", "ICSE - X", "ISC - XI", "ISC - XII").
+// Each class folder contains "CISCE Resources" (board publications:
+// APF/CFQ/PYQP/SQP/Syllabus type-folders) and "Community Resources"
+// (subject-named folders directly). Any other top-level folder is skipped.
 const NEW_ROOT_FOLDER_ID = "1Dref01UoCLaP6DrQHRxqY1Nrj-f5illc";
 
 const CLASS_FOLDER_TO_SLUG = {
@@ -212,16 +210,9 @@ const CLASS_FOLDER_TO_SLUG = {
     const outDir = "./output";
     fs.mkdirSync(outDir, { recursive: true });
 
-    let doxxmarksNode = null;
-
     for (const child of rootChildren) {
       if (child.type !== "folder") continue;
       const key = child.name.trim().toLowerCase();
-
-      if (key === "doxxmarks") {
-        doxxmarksNode = child;
-        continue;
-      }
 
       const slug = CLASS_FOLDER_TO_SLUG[key];
       if (!slug) {
@@ -248,13 +239,6 @@ const CLASS_FOLDER_TO_SLUG = {
       } else {
         console.log(`⚠️ "${child.name}": Community Resources folder not found`);
       }
-    }
-
-    if (doxxmarksNode) {
-      fs.writeFileSync(path.join(outDir, "doxxmarks.json"), JSON.stringify(doxxmarksNode, null, 2));
-      console.log("✅ doxxmarks.json created");
-    } else {
-      console.log("⚠️ Doxxmarks folder not found");
     }
 
     // 🔥 CREATE FLATTENED SEARCH INDEX (kept from the previous crawler, now

@@ -46,10 +46,15 @@ Design rules that matter:
 | Table | Written by | Semantics |
 | --- | --- | --- |
 | `campaign_visits` | `campaign-server.ts` (from `campaign-tracking.ts` in the browser) | One row per session per distinct set of utm tags on the landing URL |
+| `outbound_clicks` | `outbound-server.ts` (from `outbound-tracking.ts`) | One row per session per Doxxmarks entry point, recording where the visitor was sent |
 
 `campaign_visits` exists because neither other analytics source can answer "which link did this visit come from". Reddit, Discord, Slack and Gmail send no `Referer`, and Cloudflare's RUM dataset drops query strings, so `?utm_source=reddit` is invisible there. The browser reads the tags itself, keeps a `sessionStorage` marker so reloads and internal navigation don't add rows, and posts once; the row carries `source` / `medium` / `campaign` / `content` / `term`, the landing path, the referrer hostname when there is one, and the country from Cloudflare's `cf-ipcountry` header. Values are re-normalised on the server (lowercase, `[a-z0-9._~:/+-]`, length-capped) and the write is rate limited per IP like the other public counters.
 
 Because a row is written at most once per session, `COUNT(*)` reads as *sessions that arrived from this link* — not page views, and not unique people (there is no identity to dedupe on).
+
+`outbound_clicks` is the mirror image: it records where this site *sent* someone. Every "Open Doxxmarks" link writes one row before navigating — `destination` (allowlisted to `doxxmarks`), `entry` (`lp` or `class-hub`), `board`, `class_slug`, `subject`, the `path` the click happened on, `country` from `cf-ipcountry`, and `created_at`. As with campaigns there is one row per session per entry point (a `sessionStorage` key), so `COUNT(*)` is *sessions sent to Doxxmarks*, not clicks. The write is fire-and-forget: a failed insert must never delay the navigation, so the server function always resolves and the link still works.
+
+`outbound_clicks` is also what makes the UTMs verifiable from this side. `utm_medium` is derived from the same `entry` value written here, so "class-hub sent 40 sessions" and Doxxmarks' own `utm_medium=class-hub` count should agree within a session or two — a gap wider than that means the link builder and the tracker have drifted.
 
 ### Integrations (one row each)
 
@@ -65,7 +70,7 @@ All three are **seeded by hand** in the Neon SQL editor (the admin panel only pr
 
 > After the rename, `github_integration` must point at `Jivaansh-Yadav/lambda-prep`. See [Admin-and-Analytics](Admin-and-Analytics).
 
-`insta_revision_integration` is retired and has been dropped. It held the HTTP Basic pair for `upload.extramarks.com/getSignedUrl`, the endpoint that minted 7-day GCS signed URLs for the Doxxmarks revision-note PDFs. The notes now load from the public mirror bucket (`gs://emnewcontent`, same object paths under a `beta/` prefix), which needs no signing at all: a note URL is derived from its path by `scripts/drive-crawl/apply-insta-revision-notes.mjs`. Anything that still holds the old pair should treat it as compromised — see [Operations-Runbook](Operations-Runbook).
+`insta_revision_integration` is gone. It held the HTTP Basic pair for `upload.extramarks.com/getSignedUrl`, which existed only to sign revision-note PDFs for the in-app Doxxmarks player. Both the player and the crawl that used the pair were removed, so the row was dropped with nothing left to read it — see [Operations-Runbook](Operations-Runbook) for what to do if a copy of the pair survives outside git.
 
 ### Caches
 
@@ -88,7 +93,7 @@ Consequences worth knowing:
   - `analytics_history` — an orphan from the pre-Cloudflare analytics design (two rows ever inserted, then deleted, and no reference in `src/`, `scripts/` or the wiki once `cloudflare_analytics_cache` / `cloudflare_rum_cache` took over). Removing it removed the last reason to believe the site keeps its own pageview history.
   - `admin_notes` on `contact_messages` and `resource_contributions` — write-only schema. The server functions accepted the field, no call site ever sent a value, and every status change therefore wrote `NULL` over anything set by hand. Dropping it is cheaper than teaching the panel to edit a column nothing reads. Review state is `status` + `reviewed_at`.
 
-The newest table, `campaign_visits`, was created with:
+The two newest tables, `campaign_visits` and `outbound_clicks`, were created with:
 
 ```sql
 CREATE TABLE campaign_visits (
@@ -105,13 +110,27 @@ CREATE TABLE campaign_visits (
 );
 CREATE INDEX campaign_visits_created_at_idx ON campaign_visits (created_at DESC);
 CREATE INDEX campaign_visits_source_idx ON campaign_visits (source, created_at DESC);
+
+CREATE TABLE outbound_clicks (
+  id BIGSERIAL PRIMARY KEY,
+  destination TEXT NOT NULL,
+  entry TEXT NOT NULL,
+  board TEXT,
+  class_slug TEXT,
+  subject TEXT,
+  path TEXT,
+  country TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX outbound_clicks_created_at_idx ON outbound_clicks (created_at DESC);
+CREATE INDEX outbound_clicks_destination_idx ON outbound_clicks (destination, entry, created_at DESC);
 ```
 
 ## Local/dev
 
 Set `DATABASE_URL` to a Neon connection string in `.env` (or the shell) for the dev server to enable counters and admin. Without it:
 
-- catalogues, search, Doxxmarks and sharing work;
+- catalogues, search, the Doxxmarks links and sharing work;
 - ratings/views/shares silently no-op;
 - `/admin` reports that the integration is not configured instead of erroring.
 
