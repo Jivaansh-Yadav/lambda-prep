@@ -82,11 +82,11 @@ function parseArgs(argv) {
 
 /** Titles are the only stable key across the two catalogs: ids differ, and the
  * mp4 and m3u8 URLs for the same film share nothing but their folder. */
-function normalizeTitle(name) {
+export function normalizeTitle(name) {
   return (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-function isVideoItem(item) {
+export function isVideoItem(item) {
   if (item?.family === "video") return true;
   const url = item?.video ?? item?.url ?? "";
   return /\.(mp4|m3u8|webm)(\?|$)/i.test(url);
@@ -149,13 +149,27 @@ async function mapLimit(items, limit, worker) {
   return results;
 }
 
-/** Topic the item belongs under, in this catalogue's shape. */
-function chooseTopic(chapter, item, topicByKey, topicByTitle) {
-  const tagged = topicByKey.get(normalizeTitle(item?.meta?.Topic));
+/** Topic the item belongs under, in this catalogue's shape.
+ *
+ * The catalogue's top-level `topic` is the syllabus node Extramarks filed the
+ * item under, and it is the field the doxxmarks app groups by. `meta.Topic` is
+ * only stamped on some record families (HTML/SLM) and goes stale, so it is a
+ * fallback: Nucleus films carry nothing there, which is how 756 videos ended
+ * up in the chapter-level bucket instead of their real topic.
+ */
+export function chooseTopic(chapter, item, topicByKey, topicByTitle, remoteTopicByTitle) {
+  const tagged =
+    topicByKey.get(normalizeTitle(item?.topic)) ??
+    topicByKey.get(normalizeTitle(item?.meta?.Topic));
   if (tagged) return tagged;
 
   const byTitle = topicByTitle.get(normalizeTitle(item.title));
   if (byTitle) return byTitle;
+
+  // Same-title sibling in the catalogue, filed under a topic that exists here:
+  // the item's own tag is empty, so its siblings are the best evidence left.
+  const sibling = topicByKey.get(normalizeTitle(remoteTopicByTitle?.get(normalizeTitle(item.title))));
+  if (sibling) return sibling;
 
   let bucket = chapter.topics.find((topic) => topic.name === UNTAGGED_TOPIC);
   if (!bucket) {
@@ -165,7 +179,45 @@ function chooseTopic(chapter, item, topicByKey, topicByTitle) {
   return bucket;
 }
 
-function indexTopics(chapter) {
+/**
+ * Re-files videos that already sit in the chapter-level bucket onto the topic
+ * the catalogue names, and drops the bucket once it holds nothing.
+ *
+ * The bucket is where chooseTopic puts items with no usable tag, so every
+ * entry in it is a placement that was guessed by *absence*. When the catalogue
+ * does name a topic that exists in this chapter, that is strictly better
+ * information — the fix has to reach the rows already committed, since the
+ * sync skips titles it already has.
+ */
+export function repairBucketedTopics(chapter, remoteTopicByTitle) {
+  const bucket = chapter.topics.find((topic) => topic.name === UNTAGGED_TOPIC);
+  if (!bucket || !remoteTopicByTitle?.size) return { moved: 0, left: 0, dropped: false };
+
+  const topicByKey = new Map(chapter.topics.map((topic) => [normalizeTitle(topic.name), topic]));
+  const keep = [];
+  let moved = 0;
+  for (const video of bucket.videoLessons ?? []) {
+    const target = topicByKey.get(normalizeTitle(remoteTopicByTitle.get(normalizeTitle(video.name))));
+    if (target && target !== bucket) {
+      target.videoLessons ??= [];
+      target.videoLessons.push(video);
+      moved += 1;
+    } else {
+      keep.push(video);
+    }
+  }
+  bucket.videoLessons = keep;
+
+  const dropped =
+    keep.length === 0 &&
+    (bucket.interactiveClasses ?? []).length === 0 &&
+    (bucket.activities ?? []).length === 0;
+  if (dropped) chapter.topics = chapter.topics.filter((topic) => topic !== bucket);
+
+  return { moved, left: keep.length, dropped };
+}
+
+export function indexTopics(chapter) {
   const topicByKey = new Map();
   const topicByTitle = new Map();
   for (const topic of chapter.topics) {
@@ -184,11 +236,44 @@ function indexTopics(chapter) {
   return { topicByKey, topicByTitle };
 }
 
+/** title → syllabus node, for one catalogue chapter. */
+export function indexRemoteTopics(remoteChapter) {
+  const map = new Map();
+  for (const item of remoteChapter?.items ?? []) {
+    const title = normalizeTitle(item?.title);
+    const topic = (item?.topic ?? "").trim();
+    if (title && topic) map.set(title, topic);
+  }
+  return map;
+}
+
+/**
+ * Videos that are already filed under a real topic which the catalogue
+ * contradicts. Reported, never moved: a stale `meta.Topic` and a deliberate
+ * placement look identical from here, and the bucket repair is the only class
+ * of mistake this script can prove.
+ */
+export function findTopicMismatches(chapter, remoteTopicByTitle) {
+  if (!remoteTopicByTitle?.size) return [];
+  const topicByKey = new Map(chapter.topics.map((topic) => [normalizeTitle(topic.name), topic]));
+  const mismatched = [];
+  for (const topic of chapter.topics) {
+    if (topic.name === UNTAGGED_TOPIC) continue;
+    for (const video of topic.videoLessons ?? []) {
+      const remote = topicByKey.get(normalizeTitle(remoteTopicByTitle.get(normalizeTitle(video.name))));
+      if (remote && remote !== topic) {
+        mismatched.push({ title: video.name, filedUnder: topic.name, catalogueNames: remote.name });
+      }
+    }
+  }
+  return mismatched;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const curriculum = JSON.parse(await fs.readFile(args.curriculum, "utf8"));
 
-  const report = { added: [], dead: [], classes: [] };
+  const report = { added: [], dead: [], repaired: [], mismatched: [], classes: [] };
 
   for (const spec of CLASS_FILES) {
     const classData = curriculum.boards?.[spec.board]?.classes?.[spec.roman];
@@ -211,6 +296,7 @@ async function main() {
     // Collect the candidates first so the (slow) network probes run in
     // parallel rather than inside the tree walk.
     const candidates = [];
+    const matched = [];
     for (const subject of classData.subjects ?? []) {
       const remote = catalogueSubjects.get(subject.name);
       if (!remote) continue;
@@ -218,6 +304,7 @@ async function main() {
       for (const chapter of subject.chapters ?? []) {
         const remoteChapter = remoteChapters.get(chapter.name);
         if (!remoteChapter) continue;
+        matched.push({ subject, chapter, remoteChapter });
         const known = new Set();
         for (const topic of chapter.topics ?? []) {
           for (const video of topic.videoLessons ?? []) known.add(normalizeTitle(video.name));
@@ -230,6 +317,10 @@ async function main() {
         }
       }
     }
+
+    const remoteTopicsByChapter = new Map(
+      matched.map(({ chapter, remoteChapter }) => [chapter, indexRemoteTopics(remoteChapter)]),
+    );
 
     const resolved = await mapLimit(candidates, CONCURRENCY, async (candidate) => ({
       ...candidate,
@@ -244,7 +335,13 @@ async function main() {
         continue;
       }
       const { topicByKey, topicByTitle } = indexTopics(chapter);
-      const topic = chooseTopic(chapter, item, topicByKey, topicByTitle);
+      const topic = chooseTopic(
+        chapter,
+        item,
+        topicByKey,
+        topicByTitle,
+        remoteTopicsByChapter.get(chapter),
+      );
       topic.videoLessons ??= [];
       topic.videoLessons.push({
         name: item.title,
@@ -254,14 +351,33 @@ async function main() {
       report.added.push({ label, kind: media.kind });
       addedHere += 1;
     }
+
+    // The fix has to reach rows the previous runs already committed: those
+    // were placed by absence of a tag, not by a real one.
+    let repairedHere = 0;
+    for (const { subject, chapter } of matched) {
+      const remoteTopicByTitle = remoteTopicsByChapter.get(chapter);
+      const label = `${spec.board} ${spec.roman} · ${subject.name} · ${chapter.name}`;
+      const { moved, left, dropped } = repairBucketedTopics(chapter, remoteTopicByTitle);
+      if (moved > 0) {
+        repairedHere += moved;
+        report.repaired.push({ label, moved, left, dropped });
+      }
+      for (const mismatch of findTopicMismatches(chapter, remoteTopicByTitle)) {
+        report.mismatched.push({ label, ...mismatch });
+      }
+    }
+
     report.classes.push({
       class: `${spec.board} ${spec.roman}`,
       candidates: candidates.length,
       added: addedHere,
+      repaired: repairedHere,
       dead: candidates.length - addedHere,
     });
     console.log(
-      `${spec.board} ${spec.roman}: ${addedHere} video(s) added, ${candidates.length - addedHere} unreachable`,
+      `${spec.board} ${spec.roman}: ${addedHere} video(s) added, ${repairedHere} re-filed from the bucket, ` +
+        `${candidates.length - addedHere} unreachable`,
     );
   }
 
@@ -271,6 +387,16 @@ async function main() {
     `\nTotal: ${report.added.length} added (${streamed} HLS, ${native} direct mp4), ` +
       `${report.dead.length} skipped because the media 404s`,
   );
+  console.log(
+    `Re-filed: ${report.repaired.reduce((sum, entry) => sum + entry.moved, 0)} video(s) out of the ` +
+      `chapter-level bucket across ${report.repaired.length} chapter(s)`,
+  );
+  if (report.mismatched.length > 0) {
+    console.log(
+      `Note: ${report.mismatched.length} already-filed video(s) sit under a different topic than the ` +
+        `catalogue names — left untouched, listed in the report`,
+    );
+  }
 
   if (args.apply) {
     await fs.writeFile(args.curriculum, JSON.stringify(curriculum, null, 3));
@@ -285,7 +411,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error("Fatal:", error);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  main().catch((error) => {
+    console.error("Fatal:", error);
+    process.exitCode = 1;
+  });
+}
