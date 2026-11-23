@@ -45,7 +45,7 @@ describe("buildSections", () => {
     }
   });
 
-  it("returns one zeroed row per known section so the chart never loses a bar", () => {
+  it("returns one zeroed row per known section so the table never loses a row", () => {
     const sections = buildSections([]);
     expect(sections.map((s) => s.label)).toEqual(SECTION_DEFS.map((def) => def.label));
     for (const section of sections) expect(section.pageViews).toBe(0);

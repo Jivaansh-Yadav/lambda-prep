@@ -2,10 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useGoBack } from '@/hooks/use-go-back';
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
-  Cell,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -563,29 +560,13 @@ function AdminPage() {
                     <CardTitle>Page views by section — {ADMIN_RANGE_LABEL[range]}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="h-64 sm:h-72">
-                      {result.sections.every((s) => s.pageViews === 0) ? (
-                        <p className="text-sm text-muted-foreground">No page views recorded for these sections yet.</p>
-                      ) : (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={result.sections} layout="vertical" margin={{ left: 16 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                            <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} />
-                            <YAxis type="category" dataKey="label" tick={{ fontSize: 12 }} width={110} />
-                            <Tooltip
-                              formatter={(value: number, name: string) => [value.toLocaleString(), name]}
-                              labelFormatter={(label: string) => label}
-                            />
-                            <Bar dataKey="pageViews" name="Page views" radius={4}>
-                              {result.sections.map((s, i) => (
-                                <Cell key={s.path} fill={SECTION_COLORS[i % SECTION_COLORS.length]} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      )}
-                    </div>
-                    <div className="mt-4 overflow-x-auto">
+                    {/* Two sections is a comparison, not a distribution: a
+                        vertical bar chart spent a screen of height on two
+                        numbers, so the table alone carries it. */}
+                    {result.sections.every((s) => s.pageViews === 0) && (
+                      <p className="mb-3 text-sm text-muted-foreground">No page views recorded for these sections yet.</p>
+                    )}
+                    <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -797,8 +778,6 @@ function AdminPage() {
     </div>
   );
 }
-
-const SECTION_COLORS = ['#6366f1', '#22c55e', '#f59e0b'];
 
 /** Accent color identity shared by every top-level tile (KpiCard,
  * LatestCommitCard, CategoryCard) via the admin-category-card-{accent}

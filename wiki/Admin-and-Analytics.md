@@ -21,7 +21,7 @@ Two rows, four cards each, colour-coded by intent.
 | Page loads | Cloudflare Web Analytics page loads for the selected range |
 | Visits | Unique visits for the range |
 | Latest commit | `owner/repo@sha` short message — proves what production is running |
-| Deep analytics | Drill-down: traffic chart, page views by section, RUM detail panel |
+| Deep analytics | Drill-down: traffic chart, section table, RUM detail panel |
 
 **Manage (actionable, warm accents)**
 
@@ -49,7 +49,7 @@ Two different sources, both cached in Postgres because neither API is fast enoug
 - **Every range is fetched in ≤7-day slices** (`rum-windows.ts`), oldest first, summed per bucket. Cloudflare's `*AdaptiveGroups` datasets downsample a whole query once it gets wider than about a week: the same two days reported 339 page loads when asked as part of a 7-day window and 230 — with one quiet day dropped entirely — when asked as part of a 30-day window. That is why 14d/30d used to look stale and disagree with 7d. A 24h window is a single slice, so nothing changes there; 30d makes five Cloudflare calls instead of one.
 - Credentials live in `cloudflare_integration` (Cloudflare account id + a RUM API token with `Account → Analytics → Read`) — seeded once by hand in Neon, not in env vars.
 - Queries filter on **request hostname**, not on a Web Analytics site tag. The host comes from `SITE_URL` (`TRACKED_HOST` in `admin-server.ts`), so the panel, the sitemap and the canonical link all follow one value. A site tag is bound to the hostname its Web Analytics site was created for, and a stale one silently reports zero — which is exactly how the panel once went empty after production moved to `lambda-prep.pages.dev`.
-- The account can hold unrelated Web Analytics sites (other Pages projects, other people's sites). Every query — chart, KPIs, section bars and the whole RUM panel — filters to that one hostname, so those sites never enter the totals or the tables. The chart footer prints the counted host so it is never ambiguous which site a number belongs to.
+- The account can hold unrelated Web Analytics sites (other Pages projects, other people's sites). Every query — chart, KPIs, section table and the whole RUM panel — filters to that one hostname, so those sites never enter the totals or the tables. The chart footer prints the counted host so it is never ambiguous which site a number belongs to.
 - Top referrers is the only place another domain can surface, and only as *where a lambda-prep visit came from*; `(unknown)` is a direct visit.
 - `bot: 0` is applied to every query so the numbers reconcile with Cloudflare's own dashboard cards, which exclude bots.
 - When nothing is configured, the panel says so and prints the exact steps to fix it, instead of showing zeroes that look like an outage.
@@ -57,9 +57,11 @@ Two different sources, both cached in Postgres because neither API is fast enoug
 - **Hourly ticks print minutes**, `5:30 PM` rather than `5 PM`. Cloudflare's buckets start on the UTC hour, and IST is UTC+5:30, so a bucket boundary lands on `:30` IST every time; rounding to the hour would have put a label half a bucket away from the bar it sits under. The chart caption explains the offset instead of hiding it.
 - Absolute moments carry the suffix (`Nov 18, 2026, 2:14 PM IST`), day labels stay `Nov 18`, and any unparseable value renders `—` rather than `Invalid Date`.
 - The **RUM beacon is injected by the app**, not by Pages: `__root.tsx` renders `beacon.min.js` with the site tag resolved in `cf-beacon.ts` — `VITE_CF_BEACON_TOKEN` when the build environment sets one, the public production tag otherwise, and nothing at all in a development build. Pages only auto-injects for the Pages project's own hostname while real visitors also arrive through the Eazo aliases, so the beacon has to be ours. The default exists because requiring the variable meant a deploy without it shipped **no beacon at all**, and nothing in the panel said so: see "When the numbers disagree" below.
-- **Compare sections by page views, not visits.** Cloudflare's `count` is every page load of a path; `sum { visits }` only counts the load that *started* a session (referrer outside the site). Resource pages are mostly reached by clicking through the site, so the old "visits by section" chart under-reported them by construction — it was a bug in the metric, not in the traffic. The card now charts page views (`count`) and prints visits beside them in a table.
+- **Compare sections by page views, not visits.** Cloudflare's `count` is every page load of a path; `sum { visits }` only counts the load that *started* a session (referrer outside the site). Resource pages are mostly reached by clicking through the site, so the old "visits by section" chart under-reported them by construction — it was a bug in the metric, not in the traffic. The card prints page views (`count`) with visits beside them in a table.
+
+- **No bar chart for the two sections.** A vertical bar chart drew two bars (Class hubs, Resource library) and spent most of a screen doing it; the table says the same thing in two rows, so the chart was removed. The section rows, the RUM path allowlist and `buildSections` are unchanged — only the drawing went.
 - The breakdown has **two sections**, defined in `section-breakdown.ts` and used both for the panel and for the RUM query's path allowlist, so they cannot drift: `/resources` (the library) and `/classes` (**Class hubs** — the home page's class cards land there and each hub lists that class's resources, so it is a resource surface even though its path does not start with `/resources`). Leaving the class hubs out is what made the library look smaller than it is.
-- A cached payload written before the `pageViews` field existed is treated as a miss (`isCurrentPayload`), so a deploy never leaves five minutes of empty bars behind.
+- A cached payload written before the `pageViews` field existed is treated as a miss (`isCurrentPayload`), so a deploy never leaves five minutes of empty table rows behind.
 
 ### Campaign sources — the third source
 

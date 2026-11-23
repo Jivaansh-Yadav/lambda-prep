@@ -447,7 +447,8 @@ async function readCache(range: AdminRange): Promise<{ payload: CachedPayload; f
  * Rejects a row written by an older build of this query. The section breakdown
  * gained a `pageViews` figure (and a class-hub section) when the panel stopped
  * comparing sections by visits; a payload from before that change has neither,
- * and rendering it would draw empty bars for five minutes after every deploy.
+ * and rendering it would leave the table blank for five minutes after every
+ * deploy.
  * A miss just costs one live Cloudflare read, so the check is deliberately
  * strict.
  */
