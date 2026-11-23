@@ -18,7 +18,7 @@ export interface Chapter { name: string; revisionNotes?: LessonLink[]; topics: T
 export interface CurriculumSubject { name: string; chapters: Chapter[]; }
 export interface CurriculumClass { board: string; roman: string; subjects: CurriculumSubject[]; }
 
-interface RawData { boards: Record<string, { classes: Record<string, { subjects: CurriculumSubject[] }> }> }
+export interface RawData { boards: Record<string, { classes: Record<string, { subjects: CurriculumSubject[] }> }> }
 
 const data = raw as unknown as RawData;
 
@@ -44,25 +44,55 @@ const withActivities = (items: TopicActivity[] | undefined): TopicActivity[] => 
   });
 };
 
-export const curriculumClasses: CurriculumClass[] = Object.entries(data.boards).flatMap(([board, b]) =>
-  Object.entries(b.classes).map(([roman, c]) => ({
-    board,
-    roman,
-    subjects: named(c.subjects).map(subject => ({
-      name: subject.name,
-      chapters: named(subject.chapters).map(chapter => ({
-        name: chapter.name,
-        revisionNotes: withLinks(chapter.revisionNotes),
-        topics: named(chapter.topics).map(topic => ({
-          name: topic.name,
-          interactiveClasses: withLinks(topic.interactiveClasses),
-          videoLessons: withLinks(topic.videoLessons),
-          activities: withActivities(topic.activities),
-        })),
-      })),
+/** True when a chapter has at least one thing a visitor can open — a lesson,
+ * an activity or a revision note. Used to drop subjects that exist in the
+ * source data with no published material behind them. */
+export function hasChapterContent(chapter: Chapter): boolean {
+  return (
+    (chapter.revisionNotes?.length ?? 0) > 0 ||
+    (chapter.topics ?? []).some(
+      topic =>
+        (topic.interactiveClasses?.length ?? 0) > 0 ||
+        (topic.videoLessons?.length ?? 0) > 0 ||
+        (topic.activities?.length ?? 0) > 0,
+    )
+  );
+}
+
+export const curriculumClasses: CurriculumClass[] = buildCurriculumClasses(data);
+
+/** Turns the crawled dataset into render-ready classes: unnamed entries and
+ * linkless lessons dropped, duplicate activity links collapsed, and subjects
+ * that published nothing removed. */
+export function buildCurriculumClasses(raw: RawData): CurriculumClass[] {
+  return Object.entries(raw.boards).flatMap(([board, b]) =>
+    Object.entries(b.classes).map(([roman, c]) => ({
+      board,
+      roman,
+      subjects: named(c.subjects)
+        .map(subject => ({
+          name: subject.name,
+          chapters: named(subject.chapters).map(chapter => ({
+            name: chapter.name,
+            revisionNotes: withLinks(chapter.revisionNotes),
+            topics: named(chapter.topics).map(topic => ({
+              name: topic.name,
+              interactiveClasses: withLinks(topic.interactiveClasses),
+              videoLessons: withLinks(topic.videoLessons),
+              activities: withActivities(topic.activities),
+            })),
+          })),
+        }))
+        // A subject with nothing to show is not a subject anyone can study:
+        // Extramarks lists syllabuses it never published material for (ISC XI
+        // and ISC XII Environmental Science and Home Science today), and an
+        // empty card is a dead end that looks like a bug. Chapters are *not*
+        // dropped this way — `?chapter=<index>` in a shared link points into
+        // the chapter array, so removing one would shift every later link.
+        .filter(subject => subject.chapters.some(hasChapterContent)),
     })),
-  }))
-);
+  );
+}
 
 export function getCurriculumClass(board: string, roman: string) {
   return curriculumClasses.find(c => c.board === board && c.roman === roman);
