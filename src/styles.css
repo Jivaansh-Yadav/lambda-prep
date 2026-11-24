@@ -90,6 +90,19 @@
   --safe-left: max(env(safe-area-inset-left, 0px), var(--eazo-safe-area-left, 0px));
 }
 
+/* Height of the footer dock (see .site-footer-dock). The footer no longer
+   takes part in the document flow, so a spacer at the end of the document
+   takes this height instead — that is the only trace the footer leaves on the
+   page, and it is what uncovers the dock at the end of the scroll. These
+   values are first-paint estimates only: the Footer component measures the
+   real dock with a ResizeObserver and overrides the variable inline on <html>,
+   which also covers route, viewport and copy changes. */
+:root { --site-footer-h: 224px; }
+
+@media (max-width: 640px) {
+  :root { --site-footer-h: 300px; }
+}
+
 /* =====================================================================
    DARK THEME: semantic token remap only. Applied via a `.dark` class on
    <html> (see src/lib/theme.tsx). Component CSS never hardcodes colors —
@@ -439,6 +452,19 @@
   }
 
   /* Footer */
+  /* The footer is docked to the viewport, not to the document. It is out of
+     flow for good: nothing on the page can push it, stretch it or scroll it,
+     and it never shifts between a short page and a long one.
+     It sits *behind* the page (z-index 0), which is what turns the ordinary
+     end-of-page footer into a reveal: .site-content is opaque and paints over
+     it the whole way down, so the dock stays hidden until the last screen,
+     where the spacer below — exactly as tall as the dock — uncovers it. Page
+     content therefore never loses a strip of the viewport to the footer. */
+  .site-footer-dock { position: fixed; inset-inline: 0; bottom: 0; z-index: 0; display: flex; flex-direction: column; }
+  .site-content { position: relative; z-index: 1; background: var(--background); min-height: 100vh; }
+  .site-footer-spacer { height: var(--site-footer-h); }
+  .site-footer-dock .footer-statement { flex: 0 0 auto; }
+  .site-footer-dock .site-footer { flex: 0 0 auto; padding-bottom: var(--safe-bottom); }
   .site-footer { background: var(--chrome); }
   .footer-top { padding-block: 32px 28px; display: flex; justify-content: space-between; }
   .footer-top .brand > span { font-size: 30px; }

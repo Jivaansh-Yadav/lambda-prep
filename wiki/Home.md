@@ -26,7 +26,7 @@ Nothing content-shaped is written by hand. The datasets in `src/data/` are build
 
 | Page | Read this when |
 | --- | --- |
-| [Architecture](Architecture) | You need to understand the request path, SSR entry, security headers, routing or data loading |
+| [Architecture](Architecture) | You need to understand the request path, SSR entry, security headers, routing, data loading or the docked footer |
 | [Resource-Search](Resource-Search) | You are touching the `/resources` filename search: query syntax, facets, ranking, or the mobile filter sheet |
 | [Resource-Pipeline](Resource-Pipeline) | You are changing the crawler, a transform, sharding, or the CI workflow |
 | [Doxxmarks-and-Revision-Notes](Doxxmarks-and-Revision-Notes) | A “Open Doxxmarks” link lands on the wrong page, or the exit counts look wrong |

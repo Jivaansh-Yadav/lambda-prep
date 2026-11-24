@@ -343,13 +343,18 @@ function RootComponent() {
       <ThemeProvider>
         <I18nProvider>
           <SkipToContent />
-          <Header />
-          {/* Skipping to #main-content focuses this wrapper and lands the
-              reader on the page's own <main>; tabIndex={-1} makes a non-form
-              element an accepted focus target. */}
-          <div id="main-content" tabIndex={-1} className="outline-none">
-            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-            <Outlet />
+          {/* The page surface. It is opaque and stacked above the docked
+              footer, which is what hides the footer until the last screen —
+              see .site-content / .site-footer-dock in styles.css. */}
+          <div className="site-content">
+            <Header />
+            {/* Skipping to #main-content focuses this wrapper and lands the
+                reader on the page's own <main>; tabIndex={-1} makes a non-form
+                element an accepted focus target. */}
+            <div id="main-content" tabIndex={-1} className="outline-none">
+              {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+              <Outlet />
+            </div>
           </div>
           <Footer />
         </I18nProvider>

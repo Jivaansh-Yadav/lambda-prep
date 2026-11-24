@@ -64,6 +64,7 @@ Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the a
 - **Scan codes** — the share popup draws a QR for the exact link it copies: rounded modules, the brand gradient, the λ mark knocked out of the centre, and a bundled encoder (`qr-code.ts`) rather than a QR dependency.
 - **Bilingual UI** — one i18n module (`en-US`, `zh-CN`); no hardcoded strings in components.
 - **Short links** — `/drive` and `/github`, handled both at the edge (`_redirects`) and in the SSR entry.
+- **Docked footer** — pinned to the viewport bottom and out of the document flow, revealed on the last screen; the page never loses a strip of the viewport and the footer never jumps between a short page and a long one.
 
 ---
 

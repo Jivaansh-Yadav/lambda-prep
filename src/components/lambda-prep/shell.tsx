@@ -354,18 +354,53 @@ export function Header() {
 export function Footer() {
   const { t } = useI18n();
   const [contactOpen, setContactOpen] = useState(false);
+  const dockRef = useRef<HTMLDivElement>(null);
   // The closing statement is the landing page's sign-off only — every other
   // route gets the plain footer.
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const showStatement = pathname === '/';
-  return <>{showStatement && <section className="footer-statement" aria-label={t('footer.statementEyebrow')}>
-    <div className="container footer-statement-inner">
-      <span className="footer-statement-eyebrow">{t('footer.statementEyebrow')}</span>
-      <p className="footer-statement-line">{t('footer.statementLead')}{' '}
-        <span className="footer-statement-highlight">{t('footer.statementHighlight')}</span>.
-      </p>
+
+  // The footer is docked to the viewport bottom instead of sitting in the
+  // document flow, so its height never pushes, pads or re-measures the page.
+  // The one thing it still owes the document is the scroll room it used to
+  // occupy: that is what the spacer element below takes, and its height is
+  // published here as --site-footer-h (see styles.css). A ResizeObserver
+  // keeps the number honest when the statement band appears/disappears, the
+  // viewport is resized, or the copy reflows.
+  useEffect(() => {
+    const dock = dockRef.current;
+    if (!dock) return;
+    const root = document.documentElement;
+    const publish = () =>
+      root.style.setProperty('--site-footer-h', `${Math.round(dock.getBoundingClientRect().height)}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(dock);
+    window.addEventListener('orientationchange', publish);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('orientationchange', publish);
+      root.style.removeProperty('--site-footer-h');
+    };
+  }, []);
+
+  return <>
+    {/* Takes exactly the dock's height at the end of the document, so the
+        last screen of every page scrolls the footer into view. */}
+    <div className="site-footer-spacer" aria-hidden="true" />
+    <div className="site-footer-dock" ref={dockRef}>
+      {showStatement && <section className="footer-statement" aria-label={t('footer.statementEyebrow')}>
+        <div className="container footer-statement-inner">
+          <span className="footer-statement-eyebrow">{t('footer.statementEyebrow')}</span>
+          <p className="footer-statement-line">{t('footer.statementLead')}{' '}
+            <span className="footer-statement-highlight">{t('footer.statementHighlight')}</span>.
+          </p>
+        </div>
+      </section>}
+      <footer className="site-footer"><div className="container"><div className="footer-top"><div><Brand /></div><div className="footer-links"><div><p>{t('footer.tagline')}<br />{t('footer.tagline2')}</p><button type="button" className="footer-contact-link" onClick={() => setContactOpen(true)}><Mail size={14} />{t('footer.sendMessage')}</button></div></div></div><div className="footer-bottom"><span>{t('footer.copyright')}</span><span className="tiny-lambda"> λ</span></div></div></footer>
     </div>
-  </section>}<footer className="site-footer"><div className="container"><div className="footer-top"><div><Brand /></div><div className="footer-links"><div><p>{t('footer.tagline')}<br />{t('footer.tagline2')}</p><button type="button" className="footer-contact-link" onClick={() => setContactOpen(true)}><Mail size={14} />{t('footer.sendMessage')}</button></div></div></div><div className="footer-bottom"><span>{t('footer.copyright')}</span><span className="tiny-lambda"> λ</span></div></div><ContactMessageDialog open={contactOpen} onOpenChange={setContactOpen} /></footer></>;
+    <ContactMessageDialog open={contactOpen} onOpenChange={setContactOpen} />
+  </>;
 }
 
 type ContactMessageDialogProps = { open: boolean; onOpenChange: (next: boolean) => void };

@@ -50,6 +50,7 @@ node scripts/generate-all-resources.js --skip-crawl   # rebuild datasets from la
 - Design tokens (colour, spacing, radii) are CSS variables at the top of `src/styles.css`. Do not invent new hex values in components.
 - Responsive breakpoints: one column below `sm`, two at `sm`, four at `lg`. Test at 390 px before claiming a layout is done.
 - Dark mode is class-based on `<html>`, set before paint by the bootstrap script in `__root.tsx`.
+- The footer is a **viewport dock**, not the last block of the document: `.site-footer-dock` is fixed at `z-index: 0`, the page surface (`.site-content`) is opaque at `z-index: 1`, and `.site-footer-spacer` (`height: var(--site-footer-h)`) uncovers the footer on the last screen. Do not put the footer back in normal flow and do not "make room" with `padding-bottom` — both bring back the jump between a short page and a long one. See [Architecture](Architecture#the-layout-shell-and-the-docked-footer).
 
 ### Security
 - New header? Add it to **both** `CONTENT_SECURITY_POLICY` in `src/server.ts` and `public/_headers`.

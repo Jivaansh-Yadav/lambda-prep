@@ -83,6 +83,25 @@ Server functions (`createServerFn` in `src/lib/*-server.ts`) handle everything t
 
 The Trending strip is the one thing on a resource page that is not in those JSON files: `getTrendingFiles` reads the `resource_daily_views` table (see [Database](Database)) and `class-trending.tsx` renders nothing at all when the last week was quiet, so a class with no traffic keeps exactly the page it had before the strip existed.
 
+## The layout shell and the docked footer
+
+`__root.tsx` is the only root layout. It renders three layers, in this order:
+
+| Layer | Element | Job |
+| --- | --- | --- |
+| Page surface | `.site-content` | Opaque, `position: relative; z-index: 1; min-height: 100vh`. Holds `SkipToContent`, the header, the `#main-content` wrapper and the route |
+| Spacer | `.site-footer-spacer` | Normal-flow block at the end of the document, `height: var(--site-footer-h)` |
+| Dock | `.site-footer-dock` | `position: fixed; bottom: 0; z-index: 0`. Holds the home-only closing statement band plus the footer itself |
+
+The footer is out of flow for good: nothing on the page can push it, stretch it or scroll it, so it holds the same position on a three-screen landing page and on a 404, and it does not move while scrolling.
+
+Because the dock sits *behind* the page (`z-index: 0`, under an opaque surface), a literal pin would make it a permanent overlay — 223 px on desktop, 298 px on a phone, 465 px on `/` where the statement band joins it. So it is a **reveal** instead: hidden the whole way down, uncovered on the last screen by the spacer.
+
+- **Height is measured, not guessed.** `Footer` observes the dock with a `ResizeObserver` and writes `--site-footer-h` on `<html>`; the spacer reads it. That single variable covers the band appearing only on `/`, viewport resizes, reflows and route changes. The `:root` values in `styles.css` (`224px`, `300px` below `640px`) are first-paint estimates so the spacer is never zero during SSR.
+- **`min-height: 100vh` on the page surface** is what stops a short page from showing a half-covered footer: the surface always covers the viewport, so the dock is either fully hidden or fully revealed.
+- **The contact dialog is rendered outside the dock.** `Footer` returns the spacer, the dock, then `<ContactMessageDialog>`; a `z-50` overlay nested inside the `z-0` dock would be trapped in its stacking context and paint under the page surface.
+- **Do not `padding-bottom` the footer back.** Anything that restores flow participation — a manual spacer, body padding, a `sticky` footer — brings back the jump between a short page and a long one.
+
 ## Rendering and theming
 
 - **Theme with no flash** — `__root.tsx` runs a small inline script that sets the theme class on `<html>` before first paint, so a dark-mode visitor never sees a white flash.
