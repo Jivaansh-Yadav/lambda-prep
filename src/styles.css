@@ -2132,10 +2132,6 @@ textarea[aria-invalid="true"],
   flex-shrink: 0;
 }
 
-.adv-mobile-count {
-  display: none;
-}
-
 .adv-search-controls {
   display: flex;
   align-items: stretch;
@@ -2308,12 +2304,6 @@ textarea[aria-invalid="true"],
     z-index: 55;
     background: var(--overlay);
     animation: overlay-fade-in .15s ease-out;
-  }
-  /* backdrop-filter on the sticky bar creates a containing block for fixed
-     children, which would pin the sheet to the bar instead of the viewport. */
-  .adv-sticky:has(.adv-filter-panel.is-sheet) {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
   }
   .adv-filter-panel.is-sheet {
     position: fixed;
@@ -2662,48 +2652,9 @@ textarea[aria-invalid="true"],
   color: var(--muted-foreground);
 }
 
-/* The search bar doubles as the results toolbar, so it pins to the top of the
-   viewport while the student scans a long hit list: refining the query never
-   requires scrolling back up. The tinted, blurred backdrop keeps cards legible
-   as they slide underneath, and the hairline only reads as a divider when the
-   bar is actually stuck. */
-.adv-search-shell {
-  scroll-margin-top: 20px;
-}
-
-.adv-sticky {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  padding: 10px 0 8px;
-  background: color-mix(in oklch, var(--background) 90%, transparent);
-  -webkit-backdrop-filter: blur(12px) saturate(1.15);
-  backdrop-filter: blur(12px) saturate(1.15);
-  box-shadow: 0 1px 0 color-mix(in oklch, var(--border) 70%, transparent);
-}
-
-/* While the filter panel is open the toolbar stops being sticky: a pinned bar
-   taller than the viewport would strand the panel's lower facets (and the
-   phone sheet's footer) below the fold with no way to scroll to them. */
-.adv-sticky:has(.adv-filter-panel) {
-  position: static;
-}
-
-/* Compact pinned state: chips drop away, the bar keeps the input and the live
-   count only. */
-.adv-sticky.is-stuck {
-  padding: 8px 0 4px;
-}
-.adv-sticky.is-stuck .adv-quick-bar {
-  display: none;
-}
-.adv-sticky.is-stuck .adv-results-summary {
-  border-top: none;
-  padding-top: 2px;
-}
-.adv-sticky-sentinel {
-  height: 1px;
-}
+/* The search bar sits in the document flow, like the bar on the Community and
+   CISCE pages: it scrolls away with the results instead of pinning to the top
+   of the viewport. */
 
 /* Windowed results scroll with the page — no nested scrollbar, no cut-off
    bottom row. */
@@ -2725,9 +2676,6 @@ textarea[aria-invalid="true"],
 }
 
 @media (max-width: 640px) {
-  .adv-sticky {
-    padding: 8px 0 6px;
-  }
   /* One swipeable row of category chips instead of four wrapped rows that
      push the first result below the fold. */
   .adv-quick-bar {
@@ -2755,23 +2703,6 @@ textarea[aria-invalid="true"],
   .adv-quick-bar .adv-facet-num {
     display: none;
   }
-  /* The count lives in the controls row on small screens, so the sticky bar can
-     drop the summary line entirely once it pins. */
-  .adv-mobile-count {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 3px;
-    flex: 0 0 auto;
-    padding: 0 2px;
-    color: var(--muted-foreground);
-    font-size: 12.5px;
-    white-space: nowrap;
-  }
-  .adv-mobile-count strong {
-    color: var(--foreground);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
   .adv-results-summary {
     flex-wrap: nowrap;
   }
@@ -2780,9 +2711,6 @@ textarea[aria-invalid="true"],
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .adv-sticky.is-stuck .adv-results-summary {
-    display: none;
   }
   .adv-search-controls {
     width: 100%;

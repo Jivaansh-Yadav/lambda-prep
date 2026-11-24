@@ -156,20 +156,6 @@ function Resources() {
 
   const search = useAdvancedFileSearch(rawFiles, filters, 120);
 
-  const stuckSentinelRef = useRef<HTMLDivElement>(null);
-  const [barStuck, setBarStuck] = useState(false);
-
-  // Collapse the quick-filter chips once the bar is pinned to the viewport, so
-  // the toolbar costs one row of screen space instead of three while the
-  // student reads results.
-  useEffect(() => {
-    const el = stuckSentinelRef.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver(([entry]) => setBarStuck(!entry?.isIntersecting), { threshold: 0 });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
   // The URL can change under a mounted page: the header quick search navigates
   // to `/resources?q=…`, and the nav link goes back to a bare `/resources`.
   // Either way the filters follow the address bar rather than drifting from it.
@@ -230,8 +216,6 @@ function Resources() {
         <p className="page-intro">{t('resources.intro')}</p>
       </div>
 
-      <div ref={stuckSentinelRef} className="adv-sticky-sentinel" aria-hidden="true" />
-      <div className={`adv-sticky${barStuck ? ' is-stuck' : ''}`}>
       <AdvancedSearchBar
         filters={filters}
         onChange={setFilters}
@@ -247,7 +231,6 @@ function Resources() {
         showSubjectFilter
         onActivateCorpus={() => setCorpusRequested(true)}
       />
-      </div>
 
       {search.isActive ? (
         loading && !libraryHits ? (

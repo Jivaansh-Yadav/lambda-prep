@@ -555,13 +555,6 @@ export function AdvancedSearchBar({
             <ChevronDown size={14} className={`adv-filter-chevron${panelOpen ? ' is-open' : ''}`} aria-hidden="true" />
           </button>
 
-          {isActive && (
-            <span className="adv-mobile-count" aria-hidden="true">
-              <strong>{matchCount.toLocaleString()}</strong>
-              <span>{matchCount === 1 ? ' file' : ' files'}</span>
-            </span>
-          )}
-
           {(isActive || panelOpen) && (
             <label className="adv-sort-wrap">
               <ArrowUpDown size={14} aria-hidden="true" />

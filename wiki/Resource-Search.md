@@ -95,9 +95,9 @@ Name sorts use `localeCompare(..., { numeric: true })`, so `2`, `10` and `22-23`
 
 ## Responsive behaviour
 
-- Below **900 px** the filter panel becomes a modal bottom sheet (`role="dialog"`, backdrop, pinned header, footer with Reset and "Show N files"). The sticky toolbar must not be `position: sticky` while it is open — a sticky ancestor with `backdrop-filter` creates a containing block, which pins the fixed sheet to the wrong viewport offset. `.adv-sticky:has(.adv-filter-panel)` is what keeps this honest.
-- Below **640 px** the toolbar collapses to one swipeable row of category chips, the seed-query block and the per-chip counts are hidden, and the live count moves into the controls row so the summary line can disappear once the bar sticks.
-- The quick-filter chips collapse entirely when the bar is stuck, taking the pinned bar from ~183 px to ~127 px.
+- Below **900 px** the filter panel becomes a modal bottom sheet (`role="dialog"`, backdrop, pinned header, footer with Reset and "Show N files").
+- The toolbar scrolls with the page, exactly like the search field on the Community and CISCE pages. It used to pin to the top of the viewport and collapse its chips once stuck; that made the library the only page whose search bar behaved differently, and a pinned bar with `backdrop-filter` also created a containing block that misplaced the fixed phone sheet. If pinning ever comes back, that containing block has to be handled again.
+- Below **640 px** the toolbar collapses to one swipeable row of category chips; the seed-query block and the per-chip counts are hidden, and the results summary stays as the single live count.
 
 ## Keyboard and screen readers
 
@@ -112,7 +112,7 @@ Recent searches live in `localStorage` under `lambda-prep:recent-searches:v1` (m
 | Query parsing, scoring, facets, highlighting | `src/lib/advanced-search.ts` |
 | Debounce + memoised pipeline | `src/hooks/use-advanced-file-search.ts` |
 | Toolbar, filter panel, mobile sheet, recents | `src/components/lambda-prep/advanced-search-bar.tsx` |
-| Search page, result cards, URL sync, sticky observer | `src/routes/resources.index.tsx` |
+| Search page, result cards, URL sync | `src/routes/resources.index.tsx` |
 | Recents persistence | `src/lib/recent-searches.ts` |
 | Cross-class corpus | `loadAllLibraryFiles()` in `src/lib/resources-data.ts` |
 
