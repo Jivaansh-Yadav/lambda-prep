@@ -63,6 +63,16 @@ Two different sources, both cached in Postgres because neither API is fast enoug
 - The breakdown has **two sections**, defined in `section-breakdown.ts` and used both for the panel and for the RUM query's path allowlist, so they cannot drift: `/resources` (the library) and `/classes` (**Class hubs** — the home page's class cards land there and each hub lists that class's resources, so it is a resource surface even though its path does not start with `/resources`). Leaving the class hubs out is what made the library look smaller than it is.
 - A cached payload written before the `pageViews` field existed is treated as a miss (`isCurrentPayload`), so a deploy never leaves five minutes of empty table rows behind.
 
+### Sorting the panel
+
+The Resource stats tabs have always sorted on click; the analytics panel did not, so one half of the admin responded to a header and the other half ignored it. Every table in Deep analytics now behaves like the stats tables:
+
+- **Section breakdown** — Section / Page views / Visits, opening on page views descending, because that is the number the footnote under the table tells you to compare sections by.
+- **Campaign sources** — Source / Medium / Campaign / Sessions / Last seen, opening on last seen newest-first: the point of the list is which link moved recently.
+- **Doxxmarks exits** — From / Board / Class / Subject / Visitors / Last click, same default.
+- A text column lands on **A→Z** the first time it is clicked, a count or a timestamp on **descending**. `useSortState(key, { textKeys })` carries that rule, so "Board" does not open at Z→A. Comparators stay in `src/lib/table-sort.ts`: nulls sink in both directions, numbers compare numerically.
+- The five RUM lists arrive ranked by visits from Cloudflare. One **Most visits / A–Z** switch in the card header re-orders all five together — five separate controls inside a five-column grid would cost more room than the lists themselves.
+
 ### Campaign sources — the third source
 
 Cloudflare cannot say which *link* a visit came from. Reddit, Discord, Slack and Gmail strip the `Referer`, and the RUM dataset drops query strings entirely, so `?utm_source=reddit` never reaches it. The "Campaign sources" card in Deep analytics therefore reads the app's own table instead:

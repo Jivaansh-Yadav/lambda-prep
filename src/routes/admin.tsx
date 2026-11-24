@@ -80,11 +80,12 @@ import {
   type AdminCampaignResult,
   type AdminOutboundResult,
   type RumBreakdownItem,
+  type SectionBreakdownItem,
   type ManageResourcesResult,
   type AdminResourceStatsResult,
   type AdminLatestCommitResult,
 } from '@/lib/admin-server';
-import { sortRows, timeValue, type SortState } from '@/lib/table-sort';
+import { compareValues, sortRows, timeValue, type SortState } from '@/lib/table-sort';
 import {
   formatBucketTooltip,
   formatClockLabel,
@@ -566,30 +567,7 @@ function AdminPage() {
                     {result.sections.every((s) => s.pageViews === 0) && (
                       <p className="mb-3 text-sm text-muted-foreground">No page views recorded for these sections yet.</p>
                     )}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                            <th className="py-1 pr-3 font-medium">Section</th>
-                            <th className="py-1 pr-3 text-right font-medium">Page views</th>
-                            <th className="py-1 text-right font-medium">Visits</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {result.sections.map((s) => (
-                            <tr key={s.path} className="border-t border-border/50">
-                              <td className="py-1.5 pr-3">
-                                {s.label} <span className="font-mono text-xs text-muted-foreground">{s.path}</span>
-                              </td>
-                              <td className="py-1.5 pr-3 text-right font-mono">{s.pageViews.toLocaleString()}</td>
-                              <td className="py-1.5 text-right font-mono text-muted-foreground">
-                                {s.visits.toLocaleString()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <SectionViewsTable sections={result.sections} />
                     <p className="mt-4 text-xs text-muted-foreground">
                       <strong className="font-medium text-foreground">Page views</strong> are every load of a page in
                       that section, which is the number to compare sections by.{' '}
@@ -831,6 +809,67 @@ function KpiCard({
   );
 }
 
+/**
+ * The section breakdown: page views and visits per top-level section, with
+ * sortable headers. Kept as a plain <table> rather than the bordered Table
+ * component — the panel is three columns of numbers, and the frame would cost
+ * more height than the data does. Sorting starts on page views, because that
+ * is the number the panel's footnote tells you to compare sections by.
+ */
+function SectionViewsTable({ sections }: { sections: SectionBreakdownItem[] }) {
+  const [sort, toggleSort] = useSortState<'label' | 'pageViews' | 'visits'>('pageViews', {
+    textKeys: ['label'],
+  });
+  const rows = sortRows(sections, sort, {
+    label: (s) => s.label,
+    pageViews: (s) => s.pageViews,
+    visits: (s) => s.visits,
+  });
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <SortableTh
+              label="Section"
+              column="label"
+              sort={sort}
+              onSort={toggleSort}
+              className="py-1 pr-3 font-medium"
+            />
+            <SortableTh
+              label="Page views"
+              column="pageViews"
+              sort={sort}
+              onSort={toggleSort}
+              className="py-1 pr-3 text-right font-medium"
+            />
+            <SortableTh
+              label="Visits"
+              column="visits"
+              sort={sort}
+              onSort={toggleSort}
+              className="py-1 text-right font-medium"
+            />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((s) => (
+            <tr key={s.path} className="border-t border-border/50">
+              <td className="py-1.5 pr-3">
+                {s.label} <span className="font-mono text-xs text-muted-foreground">{s.path}</span>
+              </td>
+              <td className="py-1.5 pr-3 text-right font-mono">{s.pageViews.toLocaleString()}</td>
+              <td className="py-1.5 text-right font-mono text-muted-foreground">{s.visits.toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Renders the Web Analytics (RUM) detail panel inside the Deep
  * analytics modal: top pages, countries, device types, browsers and
  * referrers for the selected lookback window. Separate from the
@@ -846,6 +885,12 @@ function RumAnalyticsSection({
   loading: boolean;
   range: AdminRange;
 }) {
+  /** Cloudflare returns each breakdown ranked by visits. A rank is not the
+   * only question an admin asks of these lists — "where does India sit against
+   * the UK" wants alphabetical — so the whole card shares one ordering switch
+   * instead of five separate ones. */
+  const [order, setOrder] = useState<'visits' | 'label'>('visits');
+
   if (loading && !result) {
     return <p className="mt-6 text-sm text-muted-foreground">Loading Web Analytics (RUM) detail…</p>;
   }
@@ -911,12 +956,48 @@ function RumAnalyticsSection({
         <CardTitle>Web Analytics (RUM) — {ADMIN_RANGE_LABEL[range]}</CardTitle>
       </CardHeader>
       <CardContent>
-        <p className="mb-4 text-sm text-muted-foreground">
-          {result.totalVisits.toLocaleString()} real-user page-load visits Cloudflare recorded for this site.
-        </p>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {result.totalVisits.toLocaleString()} real-user page-load visits Cloudflare recorded for this site.
+          </p>
+          <div
+            className="inline-flex items-center rounded-lg border border-border/60 p-0.5"
+            role="group"
+            aria-label="Order the breakdown lists"
+          >
+            {(
+              [
+                ['visits', 'Most visits'],
+                ['label', 'A–Z'],
+              ] as const
+            ).map(([key, text]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setOrder(key)}
+                aria-pressed={order === key}
+                className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                  order === key
+                    ? 'bg-muted font-medium text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {panels.map((panel) => (
-            <RumBreakdownList key={panel.title} title={panel.title} items={panel.items} />
+            <RumBreakdownList
+              key={panel.title}
+              title={panel.title}
+              items={
+                order === 'label'
+                  ? [...panel.items].sort((a, b) => compareValues(a.label, b.label))
+                  : [...panel.items].sort((a, b) => b.visits - a.visits)
+              }
+            />
           ))}
         </div>
       </CardContent>
@@ -944,6 +1025,10 @@ function CampaignSourcesSection({
   cloudflareLoads: number | null;
   trackedHost: string | null;
 }) {
+  const [sort, toggleSort] = useSortState<'source' | 'medium' | 'campaign' | 'sessions' | 'lastSeen'>('lastSeen', {
+    textKeys: ['source', 'medium', 'campaign'],
+  });
+
   if (loading && !result) {
     return <p className="mt-6 text-sm text-muted-foreground">Loading campaign sources…</p>;
   }
@@ -968,6 +1053,14 @@ function CampaignSourcesSection({
   // reporting — the failure that left this panel reading 4 visits against 97
   // recorded sessions.
   const beaconGap = cloudflareLoads !== null && result.total > cloudflareLoads;
+
+  const rows = sortRows(result.rows, sort, {
+    source: (row) => row.source,
+    medium: (row) => row.medium ?? '',
+    campaign: (row) => row.campaign ?? '',
+    sessions: (row) => row.sessions,
+    lastSeen: (row) => timeValue(row.lastSeenAt),
+  });
 
   return (
     <Card className="mt-6">
@@ -998,15 +1091,27 @@ function CampaignSourcesSection({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Medium</TableHead>
-                  <TableHead>Campaign</TableHead>
-                  <TableHead className="text-right">Sessions</TableHead>
-                  <TableHead className="text-right">Last seen</TableHead>
+                  <SortableHead label="Source" column="source" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Medium" column="medium" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Campaign" column="campaign" sort={sort} onSort={toggleSort} />
+                  <SortableHead
+                    label="Sessions"
+                    column="sessions"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="text-right"
+                  />
+                  <SortableHead
+                    label="Last seen"
+                    column="lastSeen"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="text-right"
+                  />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {result.rows.map((row) => (
+                {rows.map((row) => (
                   <TableRow key={`${row.source}|${row.medium ?? ''}|${row.campaign ?? ''}`}>
                     <TableCell className="font-mono text-xs text-foreground">{row.source}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{row.medium ?? '—'}</TableCell>
@@ -1076,6 +1181,11 @@ function DoxxmarksExitsSection({
   loading: boolean;
   range: AdminRange;
 }) {
+  const [sort, toggleSort] = useSortState<'entry' | 'board' | 'klass' | 'subject' | 'clicks' | 'lastSeen'>(
+    'lastSeen',
+    { textKeys: ['entry', 'board', 'klass', 'subject'] }
+  );
+
   if (loading && !result) {
     return <p className="mt-6 text-sm text-muted-foreground">Loading Doxxmarks exits…</p>;
   }
@@ -1093,6 +1203,15 @@ function DoxxmarksExitsSection({
       </Card>
     );
   }
+
+  const rows = sortRows(result.rows, sort, {
+    entry: (row) => (row.entry === 'class-hub' ? 'class-hub' : 'lp'),
+    board: (row) => row.board ?? '',
+    klass: (row) => row.classSlug ?? '',
+    subject: (row) => row.subject ?? '',
+    clicks: (row) => row.clicks,
+    lastSeen: (row) => timeValue(row.lastSeenAt),
+  });
 
   return (
     <Card className="mt-6">
@@ -1122,16 +1241,28 @@ function DoxxmarksExitsSection({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>From</TableHead>
-                  <TableHead>Board</TableHead>
-                  <TableHead>Class</TableHead>
-                  <TableHead>Subject</TableHead>
-                  <TableHead className="text-right">Visitors</TableHead>
-                  <TableHead className="text-right">Last click</TableHead>
+                  <SortableHead label="From" column="entry" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Board" column="board" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Class" column="klass" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Subject" column="subject" sort={sort} onSort={toggleSort} />
+                  <SortableHead
+                    label="Visitors"
+                    column="clicks"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="text-right"
+                  />
+                  <SortableHead
+                    label="Last click"
+                    column="lastSeen"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="text-right"
+                  />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {result.rows.map((row) => (
+                {rows.map((row) => (
                   <TableRow key={`${row.entry}|${row.board ?? ''}|${row.classSlug ?? ''}|${row.subject ?? ''}`}>
                     <TableCell className="font-mono text-xs text-foreground">
                       {row.entry === 'class-hub' ? 'class-hub' : 'lp'}
@@ -1164,7 +1295,8 @@ function DoxxmarksExitsSection({
   );
 }
 
-function RumBreakdownList({ title, items }: { title: string; items: RumBreakdownItem[] }) {  return (
+function RumBreakdownList({ title, items }: { title: string; items: RumBreakdownItem[] }) {
+  return (
     <div>
       <p className="mb-2 text-sm font-medium text-foreground">{title}</p>
       {items.length === 0 ? (
@@ -2217,18 +2349,77 @@ function ResourceStatsCard() {
   );
 }
 
-/** Which column a table is sorted by, and in which direction. Every table
- * starts on its time column, newest first — the point of these lists is "what
- * moved recently", so that has to be the zero-click view. */
-function useSortState<K extends string>(initialKey: K): [SortState<K>, (key: K) => void] {
-  const [sort, setSort] = useState<SortState<K>>({ key: initialKey, dir: 'desc' });
+/** Which column a table is sorted by, and in which direction.
+ *
+ * The zero-click view is the one the table exists for: the stats tables start
+ * on their time column newest-first ("what moved recently"), the analytics
+ * tables on their count column ("what carried the traffic"). Text columns are
+ * the exception — clicking one lands on A→Z, not Z→A. Pass them in `textKeys`
+ * so the first click on a name column reads the way a reader expects.
+ */
+function useSortState<K extends string>(
+  initialKey: K,
+  options?: { textKeys?: readonly K[]; initialDir?: SortState<K>['dir'] }
+): [SortState<K>, (key: K) => void] {
+  const textKeys = options?.textKeys ?? [];
+  const firstDir = (key: K): SortState<K>['dir'] =>
+    textKeys.includes(key) ? 'asc' : 'desc';
+  const [sort, setSort] = useState<SortState<K>>({
+    key: initialKey,
+    dir: options?.initialDir ?? firstDir(initialKey),
+  });
   const toggle = (key: K) =>
     setSort((current) =>
       current.key === key
         ? { key, dir: current.dir === 'desc' ? 'asc' : 'desc' }
-        : { key, dir: 'desc' }
+        : { key, dir: firstDir(key) }
     );
   return [sort, toggle];
+}
+
+/** The label + arrow shared by every sortable header, so a plain <th> and a
+ * <TableHead> read the same. */
+function SortHeaderLabel<K extends string>({
+  label,
+  column,
+  sort,
+  onSort,
+  nowrap = false,
+}: {
+  label: string;
+  column: K;
+  sort: SortState<K>;
+  onSort: (column: K) => void;
+  /** Keep the label and its arrow on one line. The plain analytics tables use
+   * this because a wrapped label puts the arrow on its own line under the
+   * text; the bordered tables wrap instead, so their five columns still fit a
+   * phone. */
+  nowrap?: boolean;
+}) {
+  const active = sort.key === column;
+  const Icon = active ? (sort.dir === 'desc' ? ArrowDown : ArrowUp) : ArrowUpDown;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column)}
+      title={
+        active
+          ? `Sorted by ${label.toLowerCase()} — ${sort.dir === 'desc' ? 'descending' : 'ascending'}, click to reverse`
+          : `Sort by ${label.toLowerCase()}`
+      }
+      className={`inline-flex items-center gap-1 rounded-sm text-left transition-colors hover:text-foreground ${
+        nowrap ? 'whitespace-nowrap ' : ''
+      }${active ? 'text-foreground' : ''}`}
+    >
+      {label}
+      <Icon size={12} className={active ? 'shrink-0' : 'shrink-0 opacity-40'} />
+    </button>
+  );
+}
+
+function ariaSortFor<K extends string>(column: K, sort: SortState<K>): 'ascending' | 'descending' | 'none' {
+  if (sort.key !== column) return 'none';
+  return sort.dir === 'desc' ? 'descending' : 'ascending';
 }
 
 /** Table header that sorts its column on click and flips on a second click. */
@@ -2245,25 +2436,32 @@ function SortableHead<K extends string>({
   onSort: (column: K) => void;
   className?: string;
 }) {
-  const active = sort.key === column;
-  const Icon = active ? (sort.dir === 'desc' ? ArrowDown : ArrowUp) : ArrowUpDown;
   return (
-    <TableHead
-      className={className}
-      aria-sort={active ? (sort.dir === 'desc' ? 'descending' : 'ascending') : 'none'}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(column)}
-        title={`Sort by ${label.toLowerCase()}${active ? ` — now ${sort.dir === 'desc' ? 'newest first' : 'oldest first'}` : ''}`}
-        className={`inline-flex items-center gap-1 rounded-sm text-left transition-colors hover:text-foreground ${
-          active ? 'text-foreground' : ''
-        }`}
-      >
-        {label}
-        <Icon size={12} className={active ? 'shrink-0' : 'shrink-0 opacity-40'} />
-      </button>
+    <TableHead className={className} aria-sort={ariaSortFor(column, sort)}>
+      <SortHeaderLabel label={label} column={column} sort={sort} onSort={onSort} />
     </TableHead>
+  );
+}
+
+/** Same behaviour as SortableHead for the plain <table>s in the analytics
+ * panel, which are not built on the shadcn Table component. */
+function SortableTh<K extends string>({
+  label,
+  column,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  column: K;
+  sort: SortState<K>;
+  onSort: (column: K) => void;
+  className?: string;
+}) {
+  return (
+    <th className={className} aria-sort={ariaSortFor(column, sort)}>
+      <SortHeaderLabel label={label} column={column} sort={sort} onSort={onSort} nowrap />
+    </th>
   );
 }
 
