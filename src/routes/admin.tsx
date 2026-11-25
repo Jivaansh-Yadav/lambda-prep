@@ -74,7 +74,13 @@ import {
   ADMIN_DEFAULT_RANGE,
   ADMIN_RANGES,
   ADMIN_RANGE_LABEL,
+  ANALYTICS_MAX_AGE_DAYS,
+  ANALYTICS_RANGES,
+  ANALYTICS_RANGE_OPTION_LABEL,
+  analyticsRangeLabel,
+  analyticsRangeShortLabel,
   type AdminRange,
+  type AnalyticsRange,
   type AdminTrafficResult,
   type AdminRumResult,
   type AdminCampaignResult,
@@ -154,7 +160,12 @@ function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AdminTrafficResult | null>(null);
-  const [range, setRange] = useState<AdminRange>(ADMIN_DEFAULT_RANGE);
+  const [range, setRange] = useState<AnalyticsRange>(ADMIN_DEFAULT_RANGE);
+  // Only meaningful while `range === 'custom'`: the inclusive YYYY-MM-DD span
+  // the admin picked. Kept in state across switches so toggling back to
+  // "Custom range" restores the span they last used.
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const { section: openSection } = Route.useSearch();
   const navigate = Route.useNavigate();
   function setOpenSection(next: AdminSection | null) {
@@ -218,11 +229,11 @@ function AdminPage() {
     return typeof window === 'undefined' ? undefined : window.location.hostname;
   }
 
-  async function loadTraffic(forRange: AdminRange, force = false) {
+  async function loadTraffic(forRange: AnalyticsRange, force = false, from = customFrom, to = customTo) {
     setLoading(true);
     setError(null);
     try {
-      const data = await getAdminTraffic({ data: { range: forRange, force, host: viewHost() } });
+      const data = await getAdminTraffic({ data: { range: forRange, from, to, force, host: viewHost() } });
       setResult(data);
     } catch (error) {
       // Surface what actually failed. Server functions throw for a rejected
@@ -267,10 +278,10 @@ function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed]);
 
-  async function loadRum(forRange: AdminRange, force = false) {
+  async function loadRum(forRange: AnalyticsRange, force = false, from = customFrom, to = customTo) {
     setRumLoading(true);
     try {
-      const data = await getAdminRum({ data: { range: forRange, force, host: viewHost() } });
+      const data = await getAdminRum({ data: { range: forRange, from, to, force, host: viewHost() } });
       setRumResult(data);
     } catch (error) {
       const message = error instanceof Error ? error.message.trim() : '';
@@ -307,10 +318,10 @@ function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSection, authed]);
 
-  async function loadCampaign(forRange: AdminRange) {
+  async function loadCampaign(forRange: AnalyticsRange, from = customFrom, to = customTo) {
     setCampaignLoading(true);
     try {
-      const data = await getAdminCampaignSources({ data: { range: forRange } });
+      const data = await getAdminCampaignSources({ data: { range: forRange, from, to } });
       setCampaignResult(data);
     } catch (error) {
       const message = error instanceof Error ? error.message.trim() : '';
@@ -333,10 +344,10 @@ function AdminPage() {
     }
   }
 
-  async function loadDoxx(forRange: AdminRange) {
+  async function loadDoxx(forRange: AnalyticsRange, from = customFrom, to = customTo) {
     setDoxxLoading(true);
     try {
-      const data = await getAdminDoxxmarksExits({ data: { range: forRange } });
+      const data = await getAdminDoxxmarksExits({ data: { range: forRange, from, to } });
       setDoxxResult(data);
     } catch (error) {
       const message = error instanceof Error ? error.message.trim() : '';
@@ -372,24 +383,55 @@ function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSection, authed]);
 
-  // Changing the range re-fetches both datasets for the new window and
+  // Changing the range re-fetches every dataset for the new window and
   // discards the previous range's data (rather than keeping stale numbers
-  // visible) — both come from the same per-range Neon cache on the
-  // server, so this is usually a cheap cache hit rather than a live
-  // Cloudflare call.
-  function handleRangeChange(next: AdminRange) {
+  // visible) — the Cloudflare panels come from a per-window Neon cache on the
+  // server, so this is usually a cheap cache hit rather than a live call.
+  // Picking "Custom range" seeds a sensible default span (the last 30 days)
+  // so the picker opens on real data instead of two blank inputs, then every
+  // later date edit re-fetches through handleCustomRangeChange below.
+  function handleRangeChange(next: AnalyticsRange) {
+    let from = customFrom;
+    let to = customTo;
+    if (next === 'custom' && (!from || !to)) {
+      from = isoDaysAgo(29);
+      to = isoDaysAgo(0);
+      setCustomFrom(from);
+      setCustomTo(to);
+    }
+
     setRange(next);
     setResult(null);
     setRumResult(null);
     setCampaignResult(null);
     setDoxxResult(null);
     if (authed) {
-      void loadTraffic(next);
+      void loadTraffic(next, false, from, to);
       if (openSection === 'analytics') {
-        void loadRum(next);
-        void loadCampaign(next);
-        void loadDoxx(next);
+        void loadRum(next, false, from, to);
+        void loadCampaign(next, from, to);
+        void loadDoxx(next, from, to);
       }
+    }
+  }
+
+  // Date edits only fire a request once both ends are filled in and the span
+  // is coherent (start on or before end) — a half-typed range would otherwise
+  // hit the server's validator and surface a spurious error.
+  function handleCustomRangeChange(from: string, to: string) {
+    setCustomFrom(from);
+    setCustomTo(to);
+    if (range !== 'custom' || !from || !to || from > to) return;
+    setResult(null);
+    setRumResult(null);
+    setCampaignResult(null);
+    setDoxxResult(null);
+    if (!authed) return;
+    void loadTraffic('custom', false, from, to);
+    if (openSection === 'analytics') {
+      void loadRum('custom', false, from, to);
+      void loadCampaign('custom', from, to);
+      void loadDoxx('custom', from, to);
     }
   }
 
@@ -410,6 +452,12 @@ function AdminPage() {
       void loadDoxx(range);
     }
   }
+
+  // One resolved label for the current analytics window, so every heading
+  // names the span it describes ("last 30 days", "all time", "3 Nov 2026 –
+  // 17 Nov 2026") instead of leaving a custom span unlabelled.
+  const rangeLabel = analyticsRangeLabel(range, customFrom, customTo);
+  const rangeShortLabel = analyticsRangeShortLabel(range, customFrom, customTo);
 
   // First paint asks the server about the cookie; show a placeholder instead
   // of flashing the unlock form at an admin who is already signed in.
@@ -487,7 +535,15 @@ function AdminPage() {
           </h1>
           {openSection === 'analytics' && (
             <div className="flex flex-wrap items-center gap-2">
-              <RangeSelect value={range} onChange={handleRangeChange} />
+              <RangeSelect
+                value={range}
+                onChange={handleRangeChange}
+                ranges={ANALYTICS_RANGES}
+                labels={ANALYTICS_RANGE_OPTION_LABEL}
+                from={customFrom}
+                to={customTo}
+                onCustomChange={handleCustomRangeChange}
+              />
               <Button
                 variant="outline"
                 size="sm"
@@ -508,7 +564,7 @@ function AdminPage() {
               <>
                 <Card>
                   <CardHeader>
-                    <CardTitle>Traffic — {ADMIN_RANGE_LABEL[range]}</CardTitle>
+                    <CardTitle>Traffic — {rangeLabel}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="h-80 sm:h-96">
@@ -525,12 +581,12 @@ function AdminPage() {
                           <XAxis
                             dataKey="date"
                             tickFormatter={(v: string) =>
-                              range === '24h' ? formatHourLabel(v) : formatDayLabel(v)
+                              result.bucket === 'hour' ? formatHourLabel(v) : formatDayLabel(v)
                             }
                             tick={{ fontSize: 12 }}
                           />
                           <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-                          <Tooltip labelFormatter={(v: string) => formatBucketTooltip(v, range === '24h')} />
+                          <Tooltip labelFormatter={(v: string) => formatBucketTooltip(v, result.bucket === 'hour')} />
                           <Line type="monotone" dataKey="pageLoads" name="Page loads" stroke="#6366f1" strokeWidth={2} dot={false} />
                           <Line type="monotone" dataKey="visits" name="Visits" stroke="#22c55e" strokeWidth={2} dot={false} />
                         </LineChart>
@@ -551,14 +607,16 @@ function AdminPage() {
                     <p className="mt-1 text-xs text-muted-foreground">
                       Every range is read in 7-day slices. Cloudflare downsamples any single query wider than about a
                       week, which used to make 14d/30d under-count the same days 7d reported in full — so the ranges now
-                      agree with each other.
+                      agree with each other. <strong className="font-medium text-foreground">All time</strong> means
+                      everything Cloudflare still retains (about six months): the dataset rejects anything older, so the
+                      floor of the picker is that same limit.
                     </p>
                   </CardContent>
                 </Card>
 
                 <Card className="mt-6">
                   <CardHeader>
-                    <CardTitle>Page views by section — {ADMIN_RANGE_LABEL[range]}</CardTitle>
+                    <CardTitle>Page views by section — {rangeLabel}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {/* Two sections is a comparison, not a distribution: a
@@ -593,12 +651,12 @@ function AdminPage() {
               </p>
             )}
 
-            <RumAnalyticsSection result={rumResult} loading={rumLoading} range={range} />
+            <RumAnalyticsSection result={rumResult} loading={rumLoading} label={rangeLabel} />
 
             <CampaignSourcesSection
               result={campaignResult}
               loading={campaignLoading}
-              range={range}
+              label={rangeLabel}
               cloudflareLoads={
                 result?.configured
                   ? result.days.reduce((sum, day) => sum + day.pageLoads, 0)
@@ -607,7 +665,7 @@ function AdminPage() {
               trackedHost={result?.configured ? result.trackedHost : null}
             />
 
-            <DoxxmarksExitsSection result={doxxResult} loading={doxxLoading} range={range} />
+            <DoxxmarksExitsSection result={doxxResult} loading={doxxLoading} label={rangeLabel} />
           </>
         )}
 
@@ -633,7 +691,15 @@ function AdminPage() {
               {formatClockLabel(result.cache.fetchedAt)} {SITE_TIMEZONE_LABEL}
             </span>
           )}
-          <RangeSelect value={range} onChange={handleRangeChange} />
+          <RangeSelect
+            value={range}
+            onChange={handleRangeChange}
+            ranges={ANALYTICS_RANGES}
+            labels={ANALYTICS_RANGE_OPTION_LABEL}
+            from={customFrom}
+            to={customTo}
+            onCustomChange={handleCustomRangeChange}
+          />
           <Button
             variant="outline"
             size="sm"
@@ -673,13 +739,13 @@ function AdminPage() {
       <p className="admin-group-label">Analytics</p>
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          label={`Page loads (${range})`}
+          label={`Page loads (${rangeShortLabel})`}
           value={totals ? totals.pageLoads.toLocaleString() : '—'}
           accent="indigo"
           icon={<TrendingUp size={20} />}
         />
         <KpiCard
-          label={`Visits (${range})`}
+          label={`Visits (${rangeShortLabel})`}
           value={totals ? totals.visits.toLocaleString() : '—'}
           accent="violet"
           icon={<Users size={20} />}
@@ -770,20 +836,82 @@ type Accent = 'indigo' | 'violet' | 'sky' | 'indigo-deep' | 'emerald' | 'amber' 
  * Radix Select backs both, driven by the same `range` state so switching
  * it in either place re-fetches the traffic + RUM data for the new
  * window (see handleRangeChange in AdminPage). */
-function RangeSelect({ value, onChange }: { value: AdminRange; onChange: (next: AdminRange) => void }) {
+/** Local-time YYYY-MM-DD — not toISOString(), which is UTC and can land on
+ * the wrong day for admins east or west of Greenwich. */
+function toIsoDate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function isoDaysAgo(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return toIsoDate(date);
+}
+
+/**
+ * The window picker shared by the analytics panels and the resource stats
+ * table. Generic over the range union so the analytics panels can offer
+ * "All time" and a custom span while the stats table keeps the four fixed
+ * windows its SQL expects.
+ */
+function RangeSelect<T extends string>({
+  value,
+  onChange,
+  ranges,
+  labels,
+  from = '',
+  to = '',
+  onCustomChange,
+}: {
+  value: T;
+  onChange: (next: T) => void;
+  ranges: readonly T[];
+  labels: Record<string, string>;
+  from?: string;
+  to?: string;
+  onCustomChange?: (from: string, to: string) => void;
+}) {
+  const today = isoDaysAgo(0);
   return (
-    <Select value={value} onValueChange={(next) => onChange(next as AdminRange)}>
-      <SelectTrigger className="h-9 w-[132px] text-sm">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {ADMIN_RANGES.map((r) => (
-          <SelectItem key={r} value={r}>
-            {ADMIN_RANGE_LABEL[r]}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex flex-wrap items-center gap-2">
+      <Select value={value} onValueChange={(next) => onChange(next as T)}>
+        <SelectTrigger className="h-9 w-[150px] text-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {ranges.map((r) => (
+            <SelectItem key={r} value={r}>
+              {labels[r] ?? r}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {onCustomChange && (value as string) === 'custom' && (
+        <div className="flex basis-full flex-wrap items-center gap-2 sm:basis-auto">
+          <Input
+            type="date"
+            value={from}
+            min={isoDaysAgo(ANALYTICS_MAX_AGE_DAYS)}
+            max={to || today}
+            onChange={(e) => onCustomChange(e.target.value, to)}
+            aria-label="Start date"
+            className="h-9 w-[148px] text-sm"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <Input
+            type="date"
+            value={to}
+            min={from}
+            max={today}
+            onChange={(e) => onCustomChange(from, e.target.value)}
+            aria-label="End date"
+            className="h-9 w-[148px] text-sm"
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -879,11 +1007,11 @@ function SectionViewsTable({ sections }: { sections: SectionBreakdownItem[] }) {
 function RumAnalyticsSection({
   result,
   loading,
-  range,
+  label,
 }: {
   result: AdminRumResult | null;
   loading: boolean;
-  range: AdminRange;
+  label: string;
 }) {
   /** Cloudflare returns each breakdown ranked by visits. A rank is not the
    * only question an admin asks of these lists — "where does India sit against
@@ -933,7 +1061,7 @@ function RumAnalyticsSection({
       <Card className="mt-6">
         <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">
-            No Web Analytics (RUM) visits recorded yet for the {ADMIN_RANGE_LABEL[range]}. Cloudflare Pages
+            No Web Analytics (RUM) visits recorded yet for the {label}. Cloudflare Pages
             reports page loads for the project's own hostname automatically, so traffic usually shows up on the
             Pages dashboard first and here within a few minutes of the next visitor.
           </p>
@@ -953,7 +1081,7 @@ function RumAnalyticsSection({
   return (
     <Card className="mt-6">
       <CardHeader>
-        <CardTitle>Web Analytics (RUM) — {ADMIN_RANGE_LABEL[range]}</CardTitle>
+        <CardTitle>Web Analytics (RUM) — {label}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1011,13 +1139,13 @@ function RumAnalyticsSection({
 function CampaignSourcesSection({
   result,
   loading,
-  range,
+  label,
   cloudflareLoads,
   trackedHost,
 }: {
   result: AdminCampaignResult | null;
   loading: boolean;
-  range: AdminRange;
+  label: string;
   /** Page loads Cloudflare recorded on the tracked host for the same window,
    * or null when the traffic query isn't available. Used as a cross-check:
    * every recorded arrival ran this app's own JavaScript, so it must also be
@@ -1065,7 +1193,7 @@ function CampaignSourcesSection({
   return (
     <Card className="mt-6">
       <CardHeader>
-        <CardTitle>Campaign sources — {ADMIN_RANGE_LABEL[range]}</CardTitle>
+        <CardTitle>Campaign sources — {label}</CardTitle>
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground">
@@ -1175,11 +1303,11 @@ function CampaignSourcesSection({
 function DoxxmarksExitsSection({
   result,
   loading,
-  range,
+  label,
 }: {
   result: AdminOutboundResult | null;
   loading: boolean;
-  range: AdminRange;
+  label: string;
 }) {
   const [sort, toggleSort] = useSortState<'entry' | 'board' | 'klass' | 'subject' | 'clicks' | 'lastSeen'>(
     'lastSeen',
@@ -1216,7 +1344,7 @@ function DoxxmarksExitsSection({
   return (
     <Card className="mt-6">
       <CardHeader>
-        <CardTitle>Sent to Doxxmarks — {ADMIN_RANGE_LABEL[range]}</CardTitle>
+        <CardTitle>Sent to Doxxmarks — {label}</CardTitle>
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground">
@@ -2292,7 +2420,12 @@ function ResourceStatsCard() {
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
         <CardTitle className="text-base">Activity — {ADMIN_RANGE_LABEL[range]}</CardTitle>
         <div className="flex items-center gap-2">
-          <RangeSelect value={range} onChange={handleRangeChange} />
+          <RangeSelect
+            value={range}
+            onChange={handleRangeChange}
+            ranges={ADMIN_RANGES}
+            labels={ADMIN_RANGE_LABEL}
+          />
           <Button variant="outline" size="sm" onClick={() => void load(range)} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
           </Button>

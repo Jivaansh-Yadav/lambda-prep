@@ -3,11 +3,21 @@ import {
   ADMIN_DEFAULT_RANGE,
   ADMIN_RANGES,
   ADMIN_RANGE_LABEL,
+  ANALYTICS_MAX_AGE_DAYS,
+  ANALYTICS_RANGES,
+  ANALYTICS_RANGE_OPTION_LABEL,
   RANGE_DAY_COUNT,
   RANGE_WINDOW_MS,
+  analyticsRangeLabel,
+  analyticsRangeShortLabel,
   isAdminRange,
+  isAnalyticsRange,
   rangeStart,
+  resolveAnalyticsWindow,
 } from "./admin-ranges";
+
+const NOW = Date.UTC(2026, 10, 24, 12, 0, 0);
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 describe("admin analytics ranges", () => {
   it("defaults to 24h, not the old 30d", () => {
@@ -39,5 +49,71 @@ describe("admin analytics ranges", () => {
     expect(isAdminRange("90d")).toBe(false);
     expect(isAdminRange(undefined)).toBe(false);
     expect(isAdminRange(7)).toBe(false);
+  });
+});
+
+describe("analytics windows", () => {
+  it("offers the fixed windows plus all time and a custom span", () => {
+    for (const range of ADMIN_RANGES) expect(ANALYTICS_RANGES).toContain(range);
+    expect(ANALYTICS_RANGES).toContain("all");
+    expect(ANALYTICS_RANGES).toContain("custom");
+    for (const range of ANALYTICS_RANGES) expect(ANALYTICS_RANGE_OPTION_LABEL[range]).toBeTruthy();
+    expect(isAnalyticsRange("all")).toBe(true);
+    expect(isAnalyticsRange("custom")).toBe(true);
+    expect(isAnalyticsRange("90d")).toBe(false);
+  });
+
+  it("resolves a fixed window to its lookback and bucket", () => {
+    const day = resolveAnalyticsWindow("7d", undefined, undefined, NOW);
+    expect(day.since.toISOString()).toBe(new Date(NOW - 7 * DAY_MS).toISOString());
+    expect(day.until.toISOString()).toBe(new Date(NOW).toISOString());
+    expect(day.bucket).toBe("day");
+    expect(day.cacheKey).toBe("7d");
+
+    expect(resolveAnalyticsWindow("24h", undefined, undefined, NOW).bucket).toBe("hour");
+  });
+
+  it("bounds all time by Cloudflare's retention floor", () => {
+    const all = resolveAnalyticsWindow("all", undefined, undefined, NOW);
+    expect(all.since.toISOString()).toBe(new Date(NOW - ANALYTICS_MAX_AGE_DAYS * DAY_MS).toISOString());
+    expect(all.bucket).toBe("day");
+    expect(all.cacheKey).toBe("all");
+  });
+
+  it("treats the custom end date as inclusive and buckets short spans by hour", () => {
+    const span = resolveAnalyticsWindow("custom", "2026-11-20", "2026-11-21", NOW);
+    expect(span.since.toISOString()).toBe("2026-11-20T00:00:00.000Z");
+    // Two inclusive days → exclusive upper bound is the start of the 22nd.
+    expect(span.until.toISOString()).toBe("2026-11-22T00:00:00.000Z");
+    expect(span.bucket).toBe("hour");
+    expect(span.cacheKey).toBe("custom:2026-11-20:2026-11-21:hour");
+
+    expect(resolveAnalyticsWindow("custom", "2026-11-01", "2026-11-20", NOW).bucket).toBe("day");
+  });
+
+  it("clamps a custom span that ends today to now", () => {
+    const span = resolveAnalyticsWindow("custom", "2026-11-18", "2026-11-24", NOW);
+    expect(span.until.getTime()).toBe(NOW);
+  });
+
+  it("rejects half-filled, backwards, malformed and too-old custom spans", () => {
+    expect(() => resolveAnalyticsWindow("custom", "2026-11-20", undefined, NOW)).toThrow(/both a start and an end/);
+    expect(() => resolveAnalyticsWindow("custom", "2026-11-21", "2026-11-20", NOW)).toThrow(/on or after/);
+    expect(() => resolveAnalyticsWindow("custom", "20/11/2026", "2026-11-21", NOW)).toThrow(/YYYY-MM-DD/);
+    expect(() => resolveAnalyticsWindow("custom", "2025-01-01", "2025-01-05", NOW)).toThrow(/retains/);
+  });
+
+  it("spells a custom span out in its heading label", () => {
+    expect(analyticsRangeLabel("30d")).toBe("last 30 days");
+    expect(analyticsRangeLabel("all")).toBe("all time");
+    expect(analyticsRangeLabel("custom", "2026-11-03", "2026-11-17")).toBe("3 Nov 2026 – 17 Nov 2026");
+    expect(analyticsRangeLabel("custom")).toBe("the selected dates");
+  });
+
+  it("keeps the KPI card title short enough not to wrap", () => {
+    expect(analyticsRangeShortLabel("30d")).toBe("30d");
+    expect(analyticsRangeShortLabel("all")).toBe("all time");
+    expect(analyticsRangeShortLabel("custom", "2026-11-03", "2026-11-17")).toBe("3 Nov – 17 Nov");
+    expect(analyticsRangeShortLabel("custom")).toBe("custom");
   });
 });

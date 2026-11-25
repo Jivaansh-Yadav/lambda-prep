@@ -4,11 +4,20 @@ import {
   ADMIN_DEFAULT_RANGE,
   ADMIN_RANGES,
   ADMIN_RANGE_LABEL,
+  ANALYTICS_MAX_AGE_DAYS,
+  ANALYTICS_RANGES,
+  ANALYTICS_RANGE_OPTION_LABEL,
   RANGE_DAY_COUNT,
   RANGE_WINDOW_MS,
+  analyticsRangeLabel,
+  analyticsRangeShortLabel,
   isAdminRange,
+  isAnalyticsRange,
   rangeStart,
+  resolveAnalyticsWindow,
   type AdminRange,
+  type AnalyticsRange,
+  type AnalyticsWindow,
 } from "./admin-ranges";
 import {
   getDriveIntegrationConfig,
@@ -190,22 +199,29 @@ export {
   ADMIN_DEFAULT_RANGE,
   ADMIN_RANGES,
   ADMIN_RANGE_LABEL,
+  ANALYTICS_MAX_AGE_DAYS,
+  ANALYTICS_RANGES,
+  ANALYTICS_RANGE_OPTION_LABEL,
   RANGE_DAY_COUNT,
   isAdminRange,
+  isAnalyticsRange,
+  analyticsRangeLabel,
+  analyticsRangeShortLabel,
   rangeStart,
   RANGE_WINDOW_MS,
 };
 export type { AdminRange } from "./admin-ranges";
+export type { AnalyticsRange, AnalyticsWindow } from "./admin-ranges";
 
 // Row limit per traffic query. Each query now covers one ≤7-day slice (see
 // rum-windows.ts), so a day-bucketed slice needs 7 rows + 1 for the boundary
-// hour, and the hourly 24h slice needs 25.
-const RANGE_BUCKET_LIMIT: Record<AdminRange, number> = {
-  "24h": 25,
-  "7d": 8,
-  "14d": 15,
-  "30d": 31,
-};
+// hour, and the hourly slice needs 25. Deriving it from the slice keeps
+// "all time" and custom spans (which have no fixed per-range limit) correct
+// without a lookup table that would have to grow with every new range.
+function trafficBucketLimit(bucket: "hour" | "day", window: RumWindow): number {
+  const spanMs = window.until.getTime() - window.since.getTime();
+  return bucket === "hour" ? Math.ceil(spanMs / 3_600_000) + 2 : Math.ceil(spanMs / 86_400_000) + 2;
+}
 
 // Top-level sections we can distinguish by URL path alone. Subcategories
 // (class/subject/chapter) live in search params on these same routes, and
@@ -221,6 +237,9 @@ export type AdminTrafficResult =
       configured: true;
       days: TrafficDay[];
       sections: SectionBreakdownItem[];
+      /** Granularity of `days`, so the chart formats its x-axis from what was
+       * actually queried — a custom span of a few days is read by hour. */
+      bucket: "hour" | "day";
       /** The hostname `days` and `sections` are filtered to — the only host
        * this panel reports on. */
       trackedHost: string;
@@ -421,18 +440,23 @@ export const checkAdminPasscode = createServerFn({ method: "POST" })
 type CachedPayload = {
   days: TrafficDay[];
   sections: SectionBreakdownItem[];
+  /** Granularity of `days`, so the chart can format its x-axis without
+   * re-deriving it from the range (which has no single answer for a custom
+   * span: a 2-day span buckets by hour, a 20-day one by day). */
+  bucket: "hour" | "day";
   /** Stored so a cache hit can still label which host it reports on, and so
    * a row written before the panel was host-scoped is treated as a miss. */
   trackedHost: string;
 };
 
 /**
- * Reads the per-range Cloudflare analytics cache row from Neon. Returns
- * null if no row exists yet for this range, or if `sql` isn't configured
- * (no DATABASE_URL) — callers should fall back to a live Cloudflare fetch
- * in either case.
+ * Reads one Cloudflare analytics cache row from Neon (see AnalyticsWindow
+ * for the key: the range string for fixed windows, `custom:<from>:<to>`
+ * for an explicit span). Returns null if no row exists yet for this window,
+ * or if `sql` isn't configured (no DATABASE_URL) — callers should fall back
+ * to a live Cloudflare fetch in either case.
  */
-async function readCache(range: AdminRange): Promise<{ payload: CachedPayload; fetchedAt: Date } | null> {
+async function readCache(range: string): Promise<{ payload: CachedPayload; fetchedAt: Date } | null> {
   if (!sql) return null;
   const rows = await sql.query(
     `SELECT payload, fetched_at FROM cloudflare_analytics_cache WHERE range = $1 LIMIT 1`,
@@ -454,6 +478,9 @@ async function readCache(range: AdminRange): Promise<{ payload: CachedPayload; f
  */
 function isCurrentPayload(payload: CachedPayload | null | undefined): payload is CachedPayload {
   if (!payload || !Array.isArray(payload.sections) || !Array.isArray(payload.days)) return false;
+  // A row written before the chart carried its bucket granularity would be
+  // formatted with the wrong axis, so it is treated as a miss.
+  if (payload.bucket !== "hour" && payload.bucket !== "day") return false;
   return payload.sections.every(
     (section) => typeof section?.pageViews === "number" && typeof section?.visits === "number"
   );
@@ -465,7 +492,7 @@ function isCurrentPayload(payload: CachedPayload | null | undefined): payload is
  * missing DATABASE_URL degrades to "always fetch live" rather than
  * crashing.
  */
-async function writeCache(range: AdminRange, payload: CachedPayload): Promise<void> {
+async function writeCache(range: string, payload: CachedPayload): Promise<void> {
   if (!sql) return;
   await sql.query(
     `INSERT INTO cloudflare_analytics_cache (range, payload, fetched_at)
@@ -481,7 +508,7 @@ async function writeCache(range: AdminRange, payload: CachedPayload): Promise<vo
  * hold — the admin's explicit "show me now" shouldn't be answered with a
  * five-minute-old snapshot. No-ops without DATABASE_URL.
  */
-async function deleteCache(range: AdminRange): Promise<void> {
+async function deleteCache(range: string): Promise<void> {
   if (!sql) return;
   await sql.query(`DELETE FROM cloudflare_analytics_cache WHERE range = $1`, [range]);
 }
@@ -501,9 +528,9 @@ async function deleteCache(range: AdminRange): Promise<void> {
 // before the panel settles on a zero.
 const VISIT_FILTER = `bot: 0, requestHost: $host, refererHost_neq: $host, datetime_geq: $since, datetime_lt: $until`;
 
-function visitFallbackQuery(range: AdminRange): string {
-  const bucket = range === "24h" ? "datetimeHour" : "date";
-  const order = range === "24h" ? "datetimeHour_ASC" : "date_ASC";
+function visitFallbackQuery(bucket: "hour" | "day"): string {
+  const dimension = bucket === "hour" ? "datetimeHour" : "date";
+  const order = bucket === "hour" ? "datetimeHour_ASC" : "date_ASC";
   return `
   query GetVisitFallback($accountTag: String!, $host: String!, $since: Time!, $until: Time!, $limit: Int!) {
     viewer {
@@ -514,7 +541,7 @@ function visitFallbackQuery(range: AdminRange): string {
           orderBy: [${order}]
         ) {
           count
-          dimensions { bucket: ${bucket} }
+          dimensions { bucket: ${dimension} }
         }
         visitSections: rumPageloadEventsAdaptiveGroups(
           limit: 1000,
@@ -550,7 +577,7 @@ type VisitFallbackResponse = {
  * Cloudflare can't answer, so a missing fallback never becomes an error.
  */
 async function fetchVisitFallback(
-  range: AdminRange,
+  bucket: "hour" | "day",
   host: string,
   apiToken: string,
   accountId: string,
@@ -568,13 +595,13 @@ async function fetchVisitFallback(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          query: visitFallbackQuery(range),
+          query: visitFallbackQuery(bucket),
           variables: {
             accountTag: accountId,
             host,
             since: window.since.toISOString(),
             until: window.until.toISOString(),
-            limit: RANGE_BUCKET_LIMIT[range],
+            limit: trafficBucketLimit(bucket, window),
           },
         }),
       });
@@ -606,7 +633,7 @@ async function fetchVisitFallback(
  * credentials are missing or the request/response fails, so the admin UI
  * can show a clear setup state instead of a generic error.
  */
-async function fetchFromCloudflare(range: AdminRange, host: string): Promise<AdminTrafficResult> {
+async function fetchFromCloudflare(window: AnalyticsWindow, host: string): Promise<AdminTrafficResult> {
   let config: Awaited<ReturnType<typeof getCloudflareIntegrationConfig>>;
   try {
     config = await getCloudflareIntegrationConfig();
@@ -626,8 +653,7 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
   }
   const { accountId, rumApiToken: apiToken } = config;
 
-  const until = new Date();
-  const windows = chunkWindows(until.getTime() - RANGE_WINDOW_MS[range], until.getTime());
+  const windows = chunkWindows(window.since.getTime(), window.until.getTime());
 
   // Merged across slices — Cloudflare downsamples any single query whose
   // window exceeds ~7 days (see rum-windows.ts), so every range is fetched
@@ -640,7 +666,7 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
   const pageViewsByPath = new Map<string, number>();
   const visitsByPath = new Map<string, number>();
 
-  for (const window of windows) {
+  for (const slice of windows) {
     let response: Response;
     try {
       response = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
@@ -650,13 +676,13 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          query: range === "24h" ? TRAFFIC_QUERY_BY_HOUR : TRAFFIC_QUERY_BY_DAY,
+          query: window.bucket === "hour" ? TRAFFIC_QUERY_BY_HOUR : TRAFFIC_QUERY_BY_DAY,
           variables: {
             accountTag: accountId,
             host,
-            since: window.since.toISOString(),
-            until: window.until.toISOString(),
-            limit: RANGE_BUCKET_LIMIT[range],
+            since: slice.since.toISOString(),
+            until: slice.until.toISOString(),
+            limit: trafficBucketLimit(window.bucket, slice),
           },
         }),
       });
@@ -693,7 +719,7 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
   const totalLoads = [...loadsByBucket.values()].reduce((sum, n) => sum + n, 0);
   const totalApiVisits = [...visitsByBucket.values()].reduce((sum, n) => sum + n, 0);
   if (totalApiVisits === 0 && totalLoads > 0) {
-    const fallback = await fetchVisitFallback(range, host, apiToken, accountId, windows);
+    const fallback = await fetchVisitFallback(window.bucket, host, apiToken, accountId, windows);
     if (fallback && fallback.byBucket.size > 0) {
       visitsByBucket.clear();
       for (const [bucket, count] of fallback.byBucket) visitsByBucket.set(bucket, count);
@@ -726,13 +752,14 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
   // removed) has no rows at all. Rather than show an empty panel, report the
   // canonical host's numbers instead.
   if (days.length === 0 && host !== TRACKED_HOST) {
-    return fetchFromCloudflare(range, TRACKED_HOST);
+    return fetchFromCloudflare(window, TRACKED_HOST);
   }
 
   return {
     configured: true,
     days,
     sections,
+    bucket: window.bucket,
     trackedHost: host,
     cache: { hit: false, fetchedAt: new Date().toISOString() },
   };
@@ -740,8 +767,9 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
 
 /**
  * Returns Web Analytics (RUM) traffic + section breakdown for the
- * requested lookback window (24h/7d/14d/30d, default 24h), backed by a
- * 5-minute Neon cache keyed per range: a fresh cache row for that range is
+ * requested lookback window (24h/7d/14d/30d, all time, or an explicit
+ * from/to pair; default 24h), backed by a 5-minute Neon cache keyed per
+ * window (see AnalyticsWindow): a fresh cache row for that window is
  * served directly from the database; a stale or missing row triggers a
  * live Cloudflare fetch, whose result is written back to the cache before
  * returning. Requires the cloudflare_integration row (account ID,
@@ -750,10 +778,15 @@ async function fetchFromCloudflare(range: AdminRange, host: string): Promise<Adm
  */
 export const getAdminTraffic = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { range?: unknown; force?: unknown; host?: unknown };
-    if (d.range !== undefined && !isAdminRange(d.range)) throw new Error("Invalid range");
+    const d = data as { range?: unknown; force?: unknown; host?: unknown; from?: unknown; to?: unknown };
+    if (d.range !== undefined && !isAnalyticsRange(d.range)) throw new Error("Invalid range");
+    if (d.from !== undefined && typeof d.from !== "string") throw new Error("Invalid start date");
+    if (d.to !== undefined && typeof d.to !== "string") throw new Error("Invalid end date");
+    const range = (d.range as AnalyticsRange | undefined) ?? ADMIN_DEFAULT_RANGE;
+    // Resolved here, in the validator, so a backwards or too-old custom span
+    // is rejected with a readable message before any Cloudflare call.
     return {
-      range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE,
+      window: resolveAnalyticsWindow(range, d.from as string | undefined, d.to as string | undefined),
       // Refresh sets this: drop the cached row and read Cloudflare live.
       force: d.force === true,
       // The host the admin is viewing the panel from (see resolveTrackedHost).
@@ -762,7 +795,7 @@ export const getAdminTraffic = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }): Promise<AdminTrafficResult> => {
     await requirePasscode();
-    const range = data.range;
+    const range = data.window.cacheKey;
     const host = resolveTrackedHost(data.host);
 
     if (data.force) {
@@ -787,6 +820,7 @@ export const getAdminTraffic = createServerFn({ method: "POST" })
             configured: true,
             days: cached.payload.days,
             sections: cached.payload.sections,
+            bucket: cached.payload.bucket,
             trackedHost: cached.payload.trackedHost,
             cache: { hit: true, fetchedAt: cached.fetchedAt.toISOString() },
           };
@@ -798,13 +832,14 @@ export const getAdminTraffic = createServerFn({ method: "POST" })
       }
     }
 
-    const result = await fetchFromCloudflare(range, host);
+    const result = await fetchFromCloudflare(data.window, host);
 
     if (result.configured) {
       try {
         await writeCache(range, {
           days: result.days,
           sections: result.sections,
+          bucket: result.bucket,
           trackedHost: result.trackedHost,
         });
       } catch (error) {
@@ -1065,7 +1100,7 @@ type CachedRumPayload = Omit<Extract<AdminRumResult, { configured: true }>, "cac
 
 /** Reads the per-range RUM analytics cache row from Neon, mirroring
  * readCache() above for the traffic cache. */
-async function readRumCache(range: AdminRange): Promise<{ payload: CachedRumPayload; fetchedAt: Date } | null> {
+async function readRumCache(range: string): Promise<{ payload: CachedRumPayload; fetchedAt: Date } | null> {
   if (!sql) return null;
   const rows = await sql.query(
     `SELECT payload, fetched_at FROM cloudflare_rum_cache WHERE range = $1 LIMIT 1`,
@@ -1078,7 +1113,7 @@ async function readRumCache(range: AdminRange): Promise<{ payload: CachedRumPayl
 
 /** Upserts the per-range RUM analytics cache row on Neon, mirroring
  * writeCache() above. No-ops silently without DATABASE_URL. */
-async function writeRumCache(range: AdminRange, payload: CachedRumPayload): Promise<void> {
+async function writeRumCache(range: string, payload: CachedRumPayload): Promise<void> {
   if (!sql) return;
   await sql.query(
     `INSERT INTO cloudflare_rum_cache (range, payload, fetched_at)
@@ -1090,7 +1125,7 @@ async function writeRumCache(range: AdminRange, payload: CachedRumPayload): Prom
 
 /** Deletes the cached RUM detail row for one range — the Refresh button
  * path, mirroring deleteCache() above. */
-async function deleteRumCache(range: AdminRange): Promise<void> {
+async function deleteRumCache(range: string): Promise<void> {
   if (!sql) return;
   await sql.query(`DELETE FROM cloudflare_rum_cache WHERE range = $1`, [range]);
 }
@@ -1117,12 +1152,12 @@ function sortedBreakdown(merged: Map<string, number>): RumBreakdownItem[] {
 /**
  * Calls Cloudflare's GraphQL Analytics API for Web Analytics (RUM)
  * detail — top pages, countries, device types, browsers and referrers —
- * over the given lookback window, scoped to TRACKED_HOST (no site tag, for
+ * over the given window, scoped to TRACKED_HOST (no site tag, for
  * the reasons documented above TRAFFIC_QUERY_BY_DAY).
  * Returns `configured: false` (never throws) when credentials are
  * missing or the request/response fails.
  */
-async function fetchRumFromCloudflare(range: AdminRange, host: string): Promise<AdminRumResult> {
+async function fetchRumFromCloudflare(window: AnalyticsWindow, host: string): Promise<AdminRumResult> {
   let config: Awaited<ReturnType<typeof getCloudflareIntegrationConfig>>;
   try {
     config = await getCloudflareIntegrationConfig();
@@ -1142,8 +1177,7 @@ async function fetchRumFromCloudflare(range: AdminRange, host: string): Promise<
   }
   const { accountId, rumApiToken: apiToken } = config;
 
-  const until = new Date();
-  const windows = chunkWindows(until.getTime() - RANGE_WINDOW_MS[range], until.getTime());
+  const windows = chunkWindows(window.since.getTime(), window.until.getTime());
 
   // Same ≤7-day slicing as the traffic query (see rum-windows.ts): a single
   // 14d/30d query is downsampled by Cloudflare, which is why the detail
@@ -1158,7 +1192,7 @@ async function fetchRumFromCloudflare(range: AdminRange, host: string): Promise<
     topReferrers: new Map<string, number>(),
   };
 
-  for (const window of windows) {
+  for (const slice of windows) {
     let response: Response;
     try {
       response = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
@@ -1172,8 +1206,8 @@ async function fetchRumFromCloudflare(range: AdminRange, host: string): Promise<
           variables: {
             accountTag: accountId,
             host,
-            since: window.since.toISOString(),
-            until: window.until.toISOString(),
+            since: slice.since.toISOString(),
+            until: slice.until.toISOString(),
           },
         }),
       });
@@ -1223,7 +1257,7 @@ async function fetchRumFromCloudflare(range: AdminRange, host: string): Promise<
   }
 
   if (totalVisits === 0 && host !== TRACKED_HOST) {
-    return fetchRumFromCloudflare(range, TRACKED_HOST);
+    return fetchRumFromCloudflare(window, TRACKED_HOST);
   }
 
   return {
@@ -1240,25 +1274,29 @@ async function fetchRumFromCloudflare(range: AdminRange, host: string): Promise<
 }
 
 /**
- * Returns Web Analytics (RUM) detail for the requested lookback window
- * (24h/7d/14d/30d, default 24h), backed by a 5-minute Neon cache keyed
- * per range (same TTL/pattern as getAdminTraffic above). Requires the
+ * Returns Web Analytics (RUM) detail for the requested window (24h/7d/14d/
+ * 30d, all time, or an explicit from/to pair; default 24h), backed by a
+ * 5-minute Neon cache keyed per window (same TTL/pattern as getAdminTraffic
+ * above). Requires the
  * cloudflare_integration row (account ID, RUM API token with Account ->
  * Analytics -> Read scope, and site tag) to be seeded on Neon.
  */
 export const getAdminRum = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { range?: unknown; force?: unknown; host?: unknown };
-    if (d.range !== undefined && !isAdminRange(d.range)) throw new Error("Invalid range");
+    const d = data as { range?: unknown; force?: unknown; host?: unknown; from?: unknown; to?: unknown };
+    if (d.range !== undefined && !isAnalyticsRange(d.range)) throw new Error("Invalid range");
+    if (d.from !== undefined && typeof d.from !== "string") throw new Error("Invalid start date");
+    if (d.to !== undefined && typeof d.to !== "string") throw new Error("Invalid end date");
+    const range = (d.range as AnalyticsRange | undefined) ?? ADMIN_DEFAULT_RANGE;
     return {
-      range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE,
+      window: resolveAnalyticsWindow(range, d.from as string | undefined, d.to as string | undefined),
       force: d.force === true,
       host: typeof d.host === "string" ? d.host : undefined,
     };
   })
   .handler(async ({ data }): Promise<AdminRumResult> => {
     await requirePasscode();
-    const range = data.range;
+    const range = data.window.cacheKey;
     const host = resolveTrackedHost(data.host);
 
     if (data.force) {
@@ -1284,7 +1322,7 @@ export const getAdminRum = createServerFn({ method: "POST" })
       }
     }
 
-    const result = await fetchRumFromCloudflare(range, host);
+    const result = await fetchRumFromCloudflare(data.window, host);
 
     if (result.configured) {
       try {
@@ -1337,9 +1375,10 @@ export type AdminCampaignResult =
  * count over a small table. */
 export const getAdminCampaignSources = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { range?: unknown };
-    if (d.range !== undefined && !isAdminRange(d.range)) throw new Error("Invalid range");
-    return { range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE };
+    const d = data as { range?: unknown; from?: unknown; to?: unknown };
+    if (d.range !== undefined && !isAnalyticsRange(d.range)) throw new Error("Invalid range");
+    const range = (d.range as AnalyticsRange | undefined) ?? ADMIN_DEFAULT_RANGE;
+    return { window: resolveAnalyticsWindow(range, d.from as string | undefined, d.to as string | undefined) };
   })
   .handler(async ({ data }): Promise<AdminCampaignResult> => {
     await requirePasscode();
@@ -1350,17 +1389,17 @@ export const getAdminCampaignSources = createServerFn({ method: "POST" })
       };
     }
 
-    const since = new Date(Date.now() - RANGE_WINDOW_MS[data.range]);
+    const { since, until } = data.window;
 
     try {
       const rows = (await sql.query(
         `SELECT source, medium, campaign, COUNT(*)::int AS sessions, MAX(created_at) AS last_seen_at
            FROM campaign_visits
-          WHERE created_at >= $1
+          WHERE created_at >= $1 AND created_at < $2
           GROUP BY source, medium, campaign
           ORDER BY sessions DESC, last_seen_at DESC
           LIMIT 50`,
-        [since.toISOString()],
+        [since.toISOString(), until.toISOString()],
       )) as Array<{
         source: string;
         medium: string | null;
@@ -1429,9 +1468,10 @@ export type AdminOutboundResult =
 /** Doxxmarks exits for the requested lookback window, busiest first. */
 export const getAdminDoxxmarksExits = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { range?: unknown };
-    if (d.range !== undefined && !isAdminRange(d.range)) throw new Error("Invalid range");
-    return { range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE };
+    const d = data as { range?: unknown; from?: unknown; to?: unknown };
+    if (d.range !== undefined && !isAnalyticsRange(d.range)) throw new Error("Invalid range");
+    const range = (d.range as AnalyticsRange | undefined) ?? ADMIN_DEFAULT_RANGE;
+    return { window: resolveAnalyticsWindow(range, d.from as string | undefined, d.to as string | undefined) };
   })
   .handler(async ({ data }): Promise<AdminOutboundResult> => {
     await requirePasscode();
@@ -1442,16 +1482,16 @@ export const getAdminDoxxmarksExits = createServerFn({ method: "POST" })
       };
     }
 
-    const since = new Date(Date.now() - RANGE_WINDOW_MS[data.range]);
+    const { since, until } = data.window;
 
     try {
       const rows = (await sql.query(
         `SELECT entry, board, class_slug, subject, COUNT(*)::int AS clicks, MAX(created_at) AS last_seen_at
            FROM outbound_clicks
-          WHERE destination = 'doxxmarks' AND created_at >= $1
+          WHERE destination = 'doxxmarks' AND created_at >= $1 AND created_at < $2
           GROUP BY entry, board, class_slug, subject
           ORDER BY clicks DESC, last_seen_at DESC`,
-        [since.toISOString()],
+        [since.toISOString(), until.toISOString()],
       )) as Array<{
         entry: string;
         board: string | null;
