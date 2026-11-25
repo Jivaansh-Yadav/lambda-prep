@@ -9,6 +9,8 @@
 // now" surface, and a month-wide default made every number read as
 // background noise.
 
+import { SITE_TIMEZONE } from "./time-labels";
+
 export const ADMIN_RANGES = ["24h", "7d", "14d", "30d"] as const;
 export type AdminRange = (typeof ADMIN_RANGES)[number];
 
@@ -48,12 +50,13 @@ export const ADMIN_RANGE_LABEL: Record<AdminRange, string> = {
 // ---------------------------------------------------------------------
 // Analytics windows
 // ---------------------------------------------------------------------
-// The Cloudflare-backed analytics panels offer two windows the database
-// tables above cannot: "all" (everything Cloudflare still retains) and
-// "custom" (an explicit from/to pair). They live in their own list because
-// their window is not a fixed number of milliseconds — it needs the picked
-// dates — so only the analytics queries can resolve them. The resource
-// stats tables keep the four fixed windows.
+// Every analytics panel shares one selector: the four fixed windows above
+// plus "all" (everything Cloudflare still retains) and "custom" (an explicit
+// from/to pair). The last two cannot be expressed as a fixed number of
+// milliseconds — they need the picked dates — so `resolveAnalyticsWindow()`
+// turns a selection into concrete bounds, a bucket size and a cache key, and
+// both the Cloudflare queries and the database-backed Activity tables read
+// the window from it.
 
 export const ANALYTICS_RANGES = ["24h", "7d", "14d", "30d", "all", "custom"] as const;
 export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
@@ -189,6 +192,52 @@ export function analyticsRangeLabel(range: AnalyticsRange, from?: string, to?: s
     });
   };
   return `${fmt(from)} – ${fmt(to)}`;
+}
+
+/** The IST calendar days a resolved window covers, as inclusive
+ * `YYYY-MM-DD` bounds. Needed by tables that store a bare DATE rather than an
+ * instant (`resource_daily_views`): they can only answer "which days", so the
+ * window has to be rounded to whole days in the zone the write path files
+ * views under.
+ *
+ * A custom span keeps the dates that were picked — rounding by instant would
+ * add a day, because the exclusive end is midnight UTC and therefore already
+ * the next IST morning. An end date past today clamps to today, with `until`.
+ * A fixed window keeps its old reading ("24h" is today in IST, "7d" is today
+ * plus the six days before it), and all time runs from the retention floor to
+ * today. */
+export function analyticsDayBounds(
+  range: AnalyticsRange,
+  window: AnalyticsWindow,
+  from?: string,
+  to?: string
+): { from: string; to: string } {
+  if (range === "custom") {
+    // The window resolver already rejects a half-filled span; falling back to
+    // today keeps this helper total for callers that pass a bare window.
+    const today = istDay(window.until.getTime());
+    return { from: from ?? today, to: !to || to > today ? today : to };
+  }
+  const lastDay = istDay(window.until.getTime() - 1);
+  if (range === "all") return { from: istDay(window.since.getTime()), to: lastDay };
+  const [y, m, d] = lastDay.split("-").map(Number);
+  const firstDay = new Date(Date.UTC(y!, m! - 1, d!) - (RANGE_DAY_COUNT[range] - 1) * DAY_MS)
+    .toISOString()
+    .slice(0, 10);
+  return { from: firstDay, to: lastDay };
+}
+
+/** An instant as the IST calendar day it falls on. Built from parts rather
+ * than a locale string so the output is always YYYY-MM-DD. */
+function istDay(instant: number): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: SITE_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(instant));
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 /** Start of the window, as a Date — the `$1::timestamptz` every

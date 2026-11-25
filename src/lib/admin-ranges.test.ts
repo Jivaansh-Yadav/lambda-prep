@@ -8,6 +8,7 @@ import {
   ANALYTICS_RANGE_OPTION_LABEL,
   RANGE_DAY_COUNT,
   RANGE_WINDOW_MS,
+  analyticsDayBounds,
   analyticsRangeLabel,
   analyticsRangeShortLabel,
   isAdminRange,
@@ -115,5 +116,30 @@ describe("analytics windows", () => {
     expect(analyticsRangeShortLabel("all")).toBe("all time");
     expect(analyticsRangeShortLabel("custom", "2026-11-03", "2026-11-17")).toBe("3 Nov – 17 Nov");
     expect(analyticsRangeShortLabel("custom")).toBe("custom");
+  });
+});
+
+/** Day buckets (`resource_daily_views`) store a DATE, so the window has to be
+ * resolved to IST calendar days. NOW is 12:00 UTC = 17:30 IST on 24 Nov. */
+describe("analytics day bounds", () => {
+  const bounds = (range: Parameters<typeof resolveAnalyticsWindow>[0], from?: string, to?: string) =>
+    analyticsDayBounds(range, resolveAnalyticsWindow(range, from, to, NOW), from, to);
+
+  it("keeps a fixed window on whole days ending today", () => {
+    expect(bounds("24h")).toEqual({ from: "2026-11-24", to: "2026-11-24" });
+    expect(bounds("7d")).toEqual({ from: "2026-11-18", to: "2026-11-24" });
+    expect(bounds("30d")).toEqual({ from: "2026-10-26", to: "2026-11-24" });
+  });
+
+  it("runs all time from the retention floor to today", () => {
+    expect(bounds("all")).toEqual({ from: "2026-05-28", to: "2026-11-24" });
+  });
+
+  it("keeps the picked dates of a custom span instead of rounding them out", () => {
+    expect(bounds("custom", "2026-11-03", "2026-11-17")).toEqual({ from: "2026-11-03", to: "2026-11-17" });
+  });
+
+  it("clamps a custom span that ends in the future to today", () => {
+    expect(bounds("custom", "2026-11-20", "2026-12-05")).toEqual({ from: "2026-11-20", to: "2026-11-24" });
   });
 });

@@ -9,6 +9,7 @@ import {
   ANALYTICS_RANGE_OPTION_LABEL,
   RANGE_DAY_COUNT,
   RANGE_WINDOW_MS,
+  analyticsDayBounds,
   analyticsRangeLabel,
   analyticsRangeShortLabel,
   isAdminRange,
@@ -1797,7 +1798,7 @@ export type AdminResourceStatsResult =
   | {
       configured: true;
       /** The window every list below was scoped to. */
-      range: AdminRange;
+      range: AnalyticsRange;
       ratings: AdminRatingRow[];
       comments: AdminCommentRow[];
       views: AdminViewRow[];
@@ -1816,14 +1817,15 @@ function driveFileUrl(fileId: string): string {
 
 /**
  * Resource engagement scoped to one lookback window, for the admin
- * "Resource stats" panel. Every list answers "which files were live in the
- * last 24 hours / 7 / 14 / 30 days", so the same window that scopes the
- * traffic charts also scopes these tables.
+ * "Activity" panel. Every list answers "which files were live in the last
+ * 24 hours / 7 / 14 / 30 days", all time, or a picked date span — the same
+ * six selections the traffic charts offer, resolved by the same helper.
  *
  * Two of the four tables have no event history, and the numbers say so
  * rather than pretending otherwise:
- * - views come from `resource_daily_views` (day buckets), so 24h means the
- *   current IST day; each row also carries the all-time counter for context.
+ * - views come from `resource_daily_views` (day buckets), so the window is
+ *   rounded to whole IST days and 24h means the current one; each row also
+ *   carries the all-time counter for context.
  * - shares keep only a running total plus `last_shared_at`, so the window
  *   selects which files appear and the count stays all-time (the panel
  *   labels the column accordingly).
@@ -1832,9 +1834,16 @@ function driveFileUrl(fileId: string): string {
  */
 export const getAdminResourceStats = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
-    const d = data as { range?: unknown };
-    if (d.range !== undefined && !isAdminRange(d.range)) throw new Error("Invalid range");
-    return { range: (d.range as AdminRange | undefined) ?? ADMIN_DEFAULT_RANGE };
+    const d = data as { range?: unknown; from?: unknown; to?: unknown };
+    if (d.range !== undefined && !isAnalyticsRange(d.range)) throw new Error("Invalid range");
+    if (d.from !== undefined && typeof d.from !== "string") throw new Error("Invalid start date");
+    if (d.to !== undefined && typeof d.to !== "string") throw new Error("Invalid end date");
+    const range = (d.range as AnalyticsRange | undefined) ?? ADMIN_DEFAULT_RANGE;
+    const from = d.from as string | undefined;
+    const to = d.to as string | undefined;
+    // Resolved here so a backwards or malformed custom span is rejected
+    // before any query runs — same contract as the Cloudflare panels.
+    return { range, from, to, window: resolveAnalyticsWindow(range, from, to) };
   })
   .handler(async ({ data }): Promise<AdminResourceStatsResult> => {
     await requirePasscode();
@@ -1844,35 +1853,38 @@ export const getAdminResourceStats = createServerFn({ method: "POST" })
     }
 
     try {
-      const since = rangeStart(data.range).toISOString();
-      const dayCount = RANGE_DAY_COUNT[data.range];
+      const since = data.window.since.toISOString();
+      const until = data.window.until.toISOString();
+      // `resource_daily_views` stores a bare DATE, so it can only be asked
+      // which IST days the window touches.
+      const days = analyticsDayBounds(data.range, data.window, data.from, data.to);
 
       const ratingRows = await sql.query(
         `SELECT file_id, AVG(rating)::float AS average, COUNT(*)::int AS count, MAX(updated_at) AS last_rated_at
          FROM resource_ratings
-         WHERE updated_at >= $1::timestamptz
+         WHERE updated_at >= $1::timestamptz AND updated_at < $2::timestamptz
          GROUP BY file_id
          ORDER BY count DESC, last_rated_at DESC`,
-        [since]
+        [since, until]
       );
       const commentRows = await sql.query(
         `SELECT id, file_id, body, created_at
          FROM resource_comments
-         WHERE created_at >= $1::timestamptz
+         WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz
          ORDER BY created_at DESC
-         LIMIT $2`,
-        [since, COMMENT_ROW_LIMIT]
+         LIMIT $3`,
+        [since, until, COMMENT_ROW_LIMIT]
       );
-      // Day buckets, not timestamps: the window is "today plus the N-1 days
-      // before it", where "today" is the IST date the write path files a
-      // view under (see views-server.ts).
+      // Day buckets, not timestamps: the window is rounded to the IST days it
+      // covers, which is the zone the write path files a view under (see
+      // views-server.ts). `days.to` is inclusive.
       const viewRows = await sql.query(
         `SELECT file_id, SUM(view_count)::int AS view_count, MAX(day)::text AS last_day
          FROM resource_daily_views
-         WHERE day > (now() AT TIME ZONE 'Asia/Kolkata')::date - $1::int
+         WHERE day >= $1::date AND day <= $2::date
          GROUP BY file_id
          ORDER BY view_count DESC, last_day DESC`,
-        [dayCount]
+        [days.from, days.to]
       );
       // `resource_views` is the all-time counter and the only table that keeps
       // an exact moment per file (`last_viewed_at`, a timestamptz written on
@@ -1890,9 +1902,9 @@ export const getAdminResourceStats = createServerFn({ method: "POST" })
       const shareRows = await sql.query(
         `SELECT file_id, share_count, last_shared_at
          FROM resource_shares
-         WHERE last_shared_at >= $1::timestamptz
+         WHERE last_shared_at >= $1::timestamptz AND last_shared_at < $2::timestamptz
          ORDER BY last_shared_at DESC`,
-        [since]
+        [since, until]
       );
 
       // Resolve every distinct file id across all four tables to its

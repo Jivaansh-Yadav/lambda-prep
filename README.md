@@ -58,7 +58,7 @@ Content is not uploaded by hand. A **GitHub Actions run** (dispatched from the a
 - **Real media playback** — `@videojs/react` with an HLS source; lectures play in place.
 - **Doxxmarks hand-off** — every lesson link leaves the app for `doxxmarks.pages.dev` with the active board, class and subject in the query string, tagged with UTMs; each click is logged to `outbound_clicks` and summarised in the admin panel.
 - **Trending strip** — the five most-opened files in a subject, above its grid, filled by widening the window from today out to a week.
-- **Passcode admin** — analytics on a 24h/7d/14d/30d/all-time/custom-date selector (24h by default) with sortable tables, resource activity on its own fixed-window selector, a live pipeline tracker, Drive folder attachment, contribution and message moderation.
+- **Passcode admin** — analytics on a 24h/7d/14d/30d/all-time/custom-date selector (24h by default) with sortable tables, resource activity on the same selector, a live pipeline tracker, Drive folder attachment, contribution and message moderation.
 - **Sortable activity lists** — ratings, views, shares and comments open on their timestamp, newest first, and every header toggles direction; a row with no timestamp sinks instead of pretending to be the epoch.
 - **One clock** — chart axes, tooltips, table cells and the Drive file list all print IST from a single module (`time-labels.ts`), so two admins reading the same row see the same minute.
 - **Scan codes** — the share popup draws a QR for the exact link it copies: rounded modules, the brand gradient, the λ mark knocked out of the centre, and a bundled encoder (`qr-code.ts`) rather than a QR dependency.

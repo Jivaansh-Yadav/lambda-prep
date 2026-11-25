@@ -72,8 +72,6 @@ import {
   deleteResource,
   getDriveWriteCapability,
   ADMIN_DEFAULT_RANGE,
-  ADMIN_RANGES,
-  ADMIN_RANGE_LABEL,
   ANALYTICS_MAX_AGE_DAYS,
   ANALYTICS_RANGES,
   ANALYTICS_RANGE_OPTION_LABEL,
@@ -851,10 +849,10 @@ function isoDaysAgo(days: number): string {
 }
 
 /**
- * The window picker shared by the analytics panels and the resource stats
- * table. Generic over the range union so the analytics panels can offer
- * "All time" and a custom span while the stats table keeps the four fixed
- * windows its SQL expects.
+ * The window picker shared by every admin panel — traffic, RUM, campaign
+ * sources, Doxxmarks exits and resource stats. Generic over the range union so
+ * each panel declares which selections it can honour; all of them currently
+ * pass the same six (the four fixed lookbacks plus all time and custom dates).
  */
 function RangeSelect<T extends string>({
   value,
@@ -889,7 +887,7 @@ function RangeSelect<T extends string>({
         </SelectContent>
       </Select>
       {onCustomChange && (value as string) === 'custom' && (
-        <div className="flex basis-full flex-wrap items-center gap-2 sm:basis-auto">
+        <div className="flex basis-full flex-wrap items-center gap-2 sm:basis-auto sm:shrink-0">
           <Input
             type="date"
             value={from}
@@ -897,7 +895,7 @@ function RangeSelect<T extends string>({
             max={to || today}
             onChange={(e) => onCustomChange(e.target.value, to)}
             aria-label="Start date"
-            className="h-9 w-[148px] text-sm"
+            className="h-9 w-[148px] shrink-0 text-sm"
           />
           <span className="text-xs text-muted-foreground">to</span>
           <Input
@@ -907,7 +905,7 @@ function RangeSelect<T extends string>({
             max={today}
             onChange={(e) => onCustomChange(from, e.target.value)}
             aria-label="End date"
-            className="h-9 w-[148px] text-sm"
+            className="h-9 w-[148px] shrink-0 text-sm"
           />
         </div>
       )}
@@ -2378,21 +2376,26 @@ const STATS_TABS: Array<{ key: StatsTab; label: string; noun: string; icon: type
  * comments, views, shares) that opens a modal with one table per
  * category — each table lists every file active in the selected window
  * plus a direct Drive link, so an admin can jump straight to the file being
- * discussed/rated/viewed/shared. The window defaults to 24h and is the same
- * 24h/7d/14d/30d list the traffic charts use. */
+ * discussed/rated/viewed/shared. The window defaults to 24h and offers the
+ * same six selections as the traffic charts: the four fixed lookbacks plus
+ * all time and a picked date span. */
 function ResourceStatsCard() {
   const [state, setState] = useState<AdminResourceStatsResult | null>(null);
-  const [range, setRange] = useState<AdminRange>(ADMIN_DEFAULT_RANGE);
+  // Same six windows as the traffic panels, so "all time" and a picked date
+  // span reach the ratings/comments/views/shares tables too, not just the
+  // Cloudflare charts.
+  const [range, setRange] = useState<AnalyticsRange>(ADMIN_DEFAULT_RANGE);
+  const [customFrom, setCustomFrom] = useState(isoDaysAgo(29));
+  const [customTo, setCustomTo] = useState(isoDaysAgo(0));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openTab, setOpenTab] = useState<StatsTab | null>(null);
 
-
-  async function load(forRange: AdminRange) {
+  async function load(forRange: AnalyticsRange, from = customFrom, to = customTo) {
     setLoading(true);
     setError(null);
     try {
-      const data = await getAdminResourceStats({ data: { range: forRange } });
+      const data = await getAdminResourceStats({ data: { range: forRange, from, to } });
       setState(data);
     } catch {
       setError('Could not load resource stats.');
@@ -2409,22 +2412,45 @@ function ResourceStatsCard() {
   // Switching the window clears the old numbers instead of leaving them on
   // screen under a new label — the whole point of the control is that the
   // counts below it describe the window named above it.
-  function handleRangeChange(next: AdminRange) {
+  function handleRangeChange(next: AnalyticsRange) {
+    let from = customFrom;
+    let to = customTo;
+    if (next === 'custom' && (!from || !to)) {
+      from = isoDaysAgo(29);
+      to = isoDaysAgo(0);
+      setCustomFrom(from);
+      setCustomTo(to);
+    }
     setRange(next);
     setState(null);
-    void load(next);
+    void load(next, from, to);
   }
+
+  // Date edits only refetch once both ends are filled in and the span is
+  // coherent, so a half-typed range never reaches the server's validator.
+  function handleCustomRangeChange(from: string, to: string) {
+    setCustomFrom(from);
+    setCustomTo(to);
+    if (range !== 'custom' || !from || !to || from > to) return;
+    setState(null);
+    void load('custom', from, to);
+  }
+
+  const rangeLabel = analyticsRangeLabel(range, customFrom, customTo);
 
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-        <CardTitle className="text-base">Activity — {ADMIN_RANGE_LABEL[range]}</CardTitle>
-        <div className="flex items-center gap-2">
+        <CardTitle className="text-base">Activity — {rangeLabel}</CardTitle>
+        <div className="flex flex-wrap items-center gap-2">
           <RangeSelect
             value={range}
             onChange={handleRangeChange}
-            ranges={ADMIN_RANGES}
-            labels={ADMIN_RANGE_LABEL}
+            ranges={ANALYTICS_RANGES}
+            labels={ANALYTICS_RANGE_OPTION_LABEL}
+            from={customFrom}
+            to={customTo}
+            onCustomChange={handleCustomRangeChange}
           />
           <Button variant="outline" size="sm" onClick={() => void load(range)} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
@@ -2468,15 +2494,15 @@ function ResourceStatsCard() {
 
         {state?.configured && (
           <p className="mt-3 text-xs text-muted-foreground">
-            Counting files with activity in the {ADMIN_RANGE_LABEL[state.range]}. Views come from day
-            buckets, so 24h means today so far (IST). Shares keep a running total only, so their count is
-            all-time — the window decides which files are listed.
+            Counting files with activity in the selected window ({rangeLabel}). Views come from day
+            buckets, so the window is rounded to whole IST days (24h means today so far). Shares keep a
+            running total only, so their count is all-time — the window decides which files are listed.
           </p>
         )}
       </CardContent>
 
       {state?.configured && openTab && (
-        <StatsModal tab={openTab} state={state} onClose={() => setOpenTab(null)} />
+        <StatsModal tab={openTab} state={state} rangeLabel={rangeLabel} onClose={() => setOpenTab(null)} />
       )}
     </Card>
   );
@@ -2601,10 +2627,14 @@ function SortableTh<K extends string>({
 function StatsModal({
   tab,
   state,
+  rangeLabel,
   onClose,
 }: {
   tab: StatsTab;
   state: Extract<AdminResourceStatsResult, { configured: true }>;
+  /** The window those rows describe, printed in the title and the empty
+   * states so the modal cannot be read as an all-time table. */
+  rangeLabel: string;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -2662,7 +2692,7 @@ function StatsModal({
         <div className="mb-4 flex items-center justify-between gap-4">
           <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
             <Icon size={16} /> {tabMeta.label}
-            <span className="text-xs font-normal text-muted-foreground">· {ADMIN_RANGE_LABEL[state.range]}</span>
+            <span className="text-xs font-normal text-muted-foreground">· {rangeLabel}</span>
           </h3>
           <button type="button" onClick={onClose} className="rounded-sm p-1 text-muted-foreground hover:text-foreground" aria-label="Close">
             <X size={18} />
@@ -2672,7 +2702,7 @@ function StatsModal({
         <div className="overflow-auto">
           {tab === 'ratings' && (
             state.ratings.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No ratings in the {ADMIN_RANGE_LABEL[state.range]}.</p>
+              <p className="text-sm text-muted-foreground">No ratings in the {rangeLabel}.</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -2710,7 +2740,7 @@ function StatsModal({
 
           {tab === 'comments' && (
             state.comments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No comments in the {ADMIN_RANGE_LABEL[state.range]}.</p>
+              <p className="text-sm text-muted-foreground">No comments in the {rangeLabel}.</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -2746,7 +2776,7 @@ function StatsModal({
 
           {tab === 'views' && (
             state.views.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No views in the {ADMIN_RANGE_LABEL[state.range]}.</p>
+              <p className="text-sm text-muted-foreground">No views in the {rangeLabel}.</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -2789,7 +2819,7 @@ function StatsModal({
 
           {tab === 'shares' && (
             state.shares.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No shares in the {ADMIN_RANGE_LABEL[state.range]}.</p>
+              <p className="text-sm text-muted-foreground">No shares in the {rangeLabel}.</p>
             ) : (
               <Table>
                 <TableHeader>
