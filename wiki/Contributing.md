@@ -73,7 +73,7 @@ Current suites:
 | `src/lib/table-sort.test.ts` | Column sorting: direction flips, null sieving, numeric-aware names |
 | `src/lib/qr-code.test.ts` | QR encoding: a reference matrix fixture, timing/finder invariants, version growth, oversized payload rejection |
 | `src/lib/qr-art.test.ts` | Scan-code geometry: corner rounding at joins, finder patterns drawn separately, quiet zone, radius modes |
-| `src/lib/admin-ranges.test.ts` | 24h/7d/14d/30d windows, labels, default range |
+| `src/lib/admin-ranges.test.ts` | fixed + all-time/custom window maths, labels, default range |
 | `src/lib/rum-windows.test.ts` | ≤7-day slice chunking and per-bucket summing |
 | `src/lib/campaign-tracking.test.ts` | utm parsing and normalisation |
 | `src/lib/github-fetch.test.ts` | Integration row → request, error mapping |
